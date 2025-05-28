@@ -1,0 +1,45 @@
+# Input files (still required on command line or here)
+hog: "../N0.tsv"
+fasta: "/path/peptide/fasta"
+
+# Output settings
+output: "./clade_results"
+prefix: ""
+
+# Analysis options
+pan: false
+clade: "Arabis_alpina.v5.1,AA21_2,AA6,AA7,AA14,AA23,AA22, etc." # Optional: Enable clade-specific analysis. When set to `true`, the program will analyze only the selected species instead of performing a full pangenome analysis.
+
+# Optional analyses
+proteome: "ALL"  # or specify species list
+genevar: "ALL"   # or specify species list
+saturation: true
+saturation_cladepair: true
+pav: true
+matrix: true
+
+
+# Bootstrap settings
+bootstrap: 10000
+
+# Visualization settings
+marker_core: "o"
+marker_pan: "s"
+
+# Clade-specific settings
+clade1: "Arabis_alpina.v5.1,AA21_2,AA6,AA7,AA14,AA23,AA22"
+clade2: "Col_PEK,Col-CEN,X,Y,Z,"
+
+# Colors and markers for cladepair saturation analysis
+marker_core_clade1: "^"
+marker_pan_clade1: "^"
+marker_core_clade2: "s"
+marker_pan_clade2: "s"
+color_core_clade1: "#c0392b"
+color_pan_clade1: "#f1c40f"
+color_core_clade2: "#c0392b"
+color_pan_clade2: "#3498db"
+
+# Transformation options
+zscore: false
+log: true

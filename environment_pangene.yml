@@ -1,0 +1,20 @@
+name: pangene
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - miniprot
+  - k8
+  - biopython
+  - pandas
+  - numpy
+  - seaborn
+  - matplotlib
+  - yaml
+  - diamond
+  - seqtk
+  - pip:
+    - pangene

@@ -1,0 +1,48 @@
+# PanHOG Configuration File
+# This file contains default settings for the PanHOG pangenome analysis toolkit
+# Command-line arguments will override these settings
+
+# Input files (required)
+hog: "path/to/your/N0.tsv"
+fasta: "path/to/your/fasta_directory"
+
+# Output settings
+output: "./results"
+prefix: "my_analysis_"
+
+# Analysis options
+pan: true
+# clade: "species1,species2,species3"  # Uncomment and specify for clade-specific analysis
+
+# Optional analyses
+proteome: "ALL"  # Set to "ALL" or specify comma-separated species list
+genevar: "ALL"   # Set to "ALL" or specify comma-separated species list
+saturation: true
+saturation_cladepair: false
+
+# Bootstrap settings
+bootstrap: 100
+
+# Visualization settings for global saturation analysis
+marker_core: "o"
+marker_pan: "s"
+
+# Clade-specific saturation analysis settings
+clade1: "sample1,sample2,sample3"
+clade2: "sample4,sample5,sample6"
+
+# Markers for cladepair saturation analysis
+marker_core_clade1: "^"
+marker_pan_clade1: "^"
+marker_core_clade2: "s"
+marker_pan_clade2: "s"
+
+# Colors for cladepair saturation analysis
+color_core_clade1: "#c0392b"
+color_pan_clade1: "#f1c40f"
+color_core_clade2: "#c0392b"
+color_pan_clade2: "#3498db"
+
+# Gene variation heatmap transformation
+zscore: false
+log: true
