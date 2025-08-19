@@ -2,7 +2,7 @@
 
 <table>
 <tr>
-<td width="600">
+<td width="400">
   <img src="panhog.png" alt="PanHOG logo" width="480"/>
 </td>
 <td>
