@@ -1,7 +1,15 @@
 # PanHOG
 
+<table>
+<tr>
+<td width="600">
+  <img src="panhog.png" alt="PanHOG logo" width="480"/>
+</td>
+<td>
 A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologous Groups (HOGs) in pangenomic datasets. It's a flexible command-line toolkit for classifying Orthofinder derived HOGs across multiple genomes in a pangenome-aware, phylogeny-informed context. It supports core/shell/private gene classification, heatmap visualization, pan-proteome generation, and saturation analysis. Now supports both command-line arguments and external configuration files.
-
+</td>
+</tr>
+</table>
 ---
 
 ## Key Features
