@@ -6,8 +6,13 @@ import os
 import argparse
 import random
 import statistics
+import subprocess
 from collections import defaultdict
 import yaml
+
+# Import Biopython for BLAST handling (SeqIO is now implemented manually)
+from Bio.Blast import NCBIXML
+from Bio.Blast.Applications import NcbiblastpCommandline
 
 import matplotlib
 matplotlib.use('Agg')  #environments without an X server
@@ -46,16 +51,11 @@ def merge_config_with_args(config, args):
     Merge configuration from YAML with command-line arguments.
     Command-line arguments take precedence over config file.
     """
-    # Only update args with config values if the arg wasn't explicitly set on command line
     for key, value in config.items():
         if hasattr(args, key):
-            # Check if the argument was set to its default value (meaning it wasn't specified on command line)
             current_value = getattr(args, key)
-            
-            # For boolean flags, only update if current value is False (default)
             if isinstance(value, bool) and not current_value:
                 setattr(args, key, value)
-            # For other types, check if it's still the default value
             elif not isinstance(value, bool) and current_value in [None, False, ".", "", 100]:  # common defaults
                 setattr(args, key, value)
     
@@ -95,21 +95,67 @@ def parse_fasta(fasta_file):
     Parse a FASTA file and return a dict: {gene_id: sequence}
     """
     seqs = {}
-    with open(fasta_file) as f:
-        current_id = None
-        current_seq = []
-        for line in f:
-            line = line.rstrip()
-            if line.startswith(">"):
-                if current_id:
-                    seqs[current_id] = "".join(current_seq)
-                current_id = line[1:].strip()
-                current_seq = []
-            else:
-                current_seq.append(line)
-        if current_id:
-            seqs[current_id] = "".join(current_seq)
+    try:
+        with open(fasta_file, 'r') as f:
+            current_id = None
+            current_seq = []
+            for line in f:
+                line = line.rstrip()
+                if line.startswith(">"):
+                    if current_id:
+                        seqs[current_id] = "".join(current_seq)
+                    current_id = line[1:].split('|')[0].split()[0]
+                    current_seq = []
+                else:
+                    current_seq.append(line)
+            if current_id:
+                seqs[current_id] = "".join(current_seq)
+    except Exception as e:
+        print(f"[WARNING] Error reading {fasta_file}: {e}")
     return seqs
+
+def load_all_sequences(fasta_dir):
+    """
+    Load all sequences from all FASTA files in the given directory.
+    Returns a dictionary mapping gene IDs to sequences.
+    """
+    gene_to_sequence = {}
+    fasta_files = []
+    for ext in ['.fasta', '.faa', '.fa', '.pep']:
+        fasta_files.extend(glob.glob(os.path.join(fasta_dir, f'*{ext}')))
+    if not fasta_files:
+        print(f"[WARNING] No FASTA files found in {fasta_dir}")
+        return gene_to_sequence
+    print(f"\nIndexing protein sequences from {len(fasta_files)} FASTA files...")
+    for fasta_file in fasta_files:
+        try:
+            print(f"  Loading {os.path.basename(fasta_file)}...")
+            file_seqs = parse_fasta(fasta_file)
+            gene_to_sequence.update(file_seqs)
+        except Exception as e:
+            print(f"[WARNING] Error processing {fasta_file}: {e}")
+    
+    print(f"Loaded {len(gene_to_sequence)} sequences from {len(fasta_files)} files")
+    return gene_to_sequence
+
+def get_selected_compartments(funano_value):
+    """
+    Determine which compartments to process based on the funano argument value.
+    Args:
+        funano_value (int): The funano argument value (1-6)
+    Returns:
+        list: List of compartment names to process
+    """
+    compartment_mapping = {
+        1: ['core', 'single-copy', 'shell', 'private', 'cloud'],
+        2: ['core'],
+        3: ['single-copy'],
+        4: ['shell'],
+        5: ['private'],
+        6: ['cloud']
+    }
+    return compartment_mapping.get(funano_value, [])
+
 
 ###########################################################
 # getMissingGenes: collects "cloud" genes by comparing FASTA
@@ -125,7 +171,6 @@ def getMissingGenes(hogsfile, fasta_dir, clade_filter=None):
     with open(hogsfile, "r") as fdh:
         reader = csv.reader(fdh, delimiter="\t")
         header = next(reader)
-        # columns 0,1,2 => HOG, OG, Clade
         for i in range(3, len(header)):
             sp_name = header[i]
             if clade_filter and sp_name not in clade_filter:
@@ -160,32 +205,28 @@ def getMissingGenes(hogsfile, fasta_dir, clade_filter=None):
 # parseHOGs: reads the HOG TSV and collects gene counts
 #############################################################
 
-def generate_pav_file(hogsfile, outdir, prefix, clade_filter=None):
+def generate_pav_file(outdir, prefix, clade_filter=None, hogsfile=None):
     """
     Generate a Presence/Absence Variant (PAV) TSV file from HOGs file.
     
     Args:
-        hogsfile (str): Path to input HOGs TSV file
         outdir (str): Output directory
         prefix (str): Prefix for output filename
         clade_filter (set, optional): Set of species to include. If None, include all.
+        hogsfile (str): Path to input HOGs TSV file.
     
     Returns:
         str: Path to the generated PAV file
     """
-    
     df = pd.read_csv(hogsfile, sep='\t')
     columns_to_drop = ['Gene', 'Tree', 'Parent', 'Clade']
     columns_to_drop = [col for col in columns_to_drop if col in df.columns]
     if columns_to_drop:
         df = df.drop(columns=columns_to_drop)
-    
     if clade_filter is not None:
         species_cols = [col for col in df.columns if col not in ['HOG', 'OG']]
         cols_to_keep = ['HOG', 'OG'] + [col for col in species_cols if col in clade_filter]
         df = df[cols_to_keep]
-    
-    # Convert to presence/absence (1/0)
     species_cols = [col for col in df.columns if col not in ['HOG', 'OG']]
     for col in species_cols:
         df[col] = df[col].apply(lambda x: 1 if pd.notna(x) and str(x).strip() != '' else 0)
@@ -194,32 +235,28 @@ def generate_pav_file(hogsfile, outdir, prefix, clade_filter=None):
     df.to_csv(pav_file, sep='\t', index=False)
     return pav_file
 
-def generate_count_matrix(hogsfile, outdir, prefix, clade_filter=None):
+def generate_count_matrix(outdir, prefix, clade_filter=None, hogsfile=None):
     """
     Generate a Count Matrix TSV file from HOGs file.
     
     Args:
-        hogsfile (str): Path to input HOGs TSV file
         outdir (str): Output directory
         prefix (str): Prefix for output filename
         clade_filter (set, optional): Set of species to include. If None, include all.
+        hogsfile (str): Path to input HOGs TSV file.
     
     Returns:
         str: Path to the generated Count Matrix file
     """
     df = pd.read_csv(hogsfile, sep='\t')
-    
     columns_to_drop = ['Gene', 'Tree', 'Parent', 'Clade']
     columns_to_drop = [col for col in columns_to_drop if col in df.columns]
     if columns_to_drop:
         df = df.drop(columns=columns_to_drop)
-    
-    # Filter species if clade_filter is provided
     if clade_filter is not None:
         species_cols = [col for col in df.columns if col not in ['HOG', 'OG']]
         cols_to_keep = ['HOG', 'OG'] + [col for col in species_cols if col in clade_filter]
         df = df[cols_to_keep]
-    
     species_cols = [col for col in df.columns if col not in ['HOG', 'OG']]
     for col in species_cols:
         df[col] = df[col].apply(lambda x: len(str(x).split(', ')) if pd.notna(x) and str(x).strip() != '' else 0)
@@ -271,7 +308,17 @@ def parseHOGs(hogsfile, clade_filter=None):
 # Extract private (genotype-specific) genes
 ##############################################
 
-def extract_private_genes(gt_hogs_file, outdir=".", prefix=""):
+def extract_private_genes(gt_hogs_file, outdir=None, prefix=""):
+    """
+    Extract private genes from genotype-specific HOGs file.
+    
+    Args:
+        gt_hogs_file (str): Path to genotype-specific HOGs TSV file
+        outdir (str, optional): Output directory. If None, uses the same directory as input file.
+        prefix (str, optional): Prefix for output filenames
+    """
+    if outdir is None:
+        outdir = os.path.dirname(gt_hogs_file)
     with open(gt_hogs_file, "r") as f:
         lines = [x.strip() for x in f if x.strip()]
     if not lines:
@@ -490,7 +537,6 @@ def run_saturation_analysis_defined(ddHOGs, clade1, clade2, outdir, prefix,
                                     marker_core_clade2='s', marker_pan_clade2='s',
                                     color_core_clade1='#c0392b', color_pan_clade1='#f1c40f',
                                     color_core_clade2='#c0392b', color_pan_clade2='#3498db'):
-    # Saturation for clade1
     n1 = len(clade1)
     results1 = {k: [] for k in range(1, n1+1)}
     for k in range(1, n1+1):
@@ -507,8 +553,6 @@ def run_saturation_analysis_defined(ddHOGs, clade1, clade2, outdir, prefix,
         core_stds1.append(statistics.pstdev(core_list))
         pan_means1.append(statistics.mean(pan_list))
         pan_stds1.append(statistics.pstdev(pan_list))
-        
-    # Saturation for clade2
     n2 = len(clade2)
     results2 = {k: [] for k in range(1, n2+1)}
     for k in range(1, n2+1):
@@ -525,14 +569,11 @@ def run_saturation_analysis_defined(ddHOGs, clade1, clade2, outdir, prefix,
         core_stds2.append(statistics.pstdev(core_list))
         pan_means2.append(statistics.mean(pan_list))
         pan_stds2.append(statistics.pstdev(pan_list))
-        
     plt.figure(figsize=(7, 6))
-    # For clade1
     plt.errorbar(k_vals1, core_means1, yerr=core_stds1, color=color_core_clade1,
                  label='Clade1 Core', fmt=f'-{marker_core_clade1}')
     plt.errorbar(k_vals1, pan_means1, yerr=pan_stds1, color=color_pan_clade1,
                  label='Clade1 Pan', fmt=f'-{marker_pan_clade1}')
-    # For clade2
     plt.errorbar(k_vals2, core_means2, yerr=core_stds2, color=color_core_clade2,
                  label='Clade2 Core', fmt=f'--{marker_core_clade2}')
     plt.errorbar(k_vals2, pan_means2, yerr=pan_stds2, color=color_pan_clade2,
@@ -558,7 +599,6 @@ def main():
         description="Phylogeny-Aware Pangenome Classification Toolkit (PanHOG)"
     )
     
-    # Configuration file option
     parser.add_argument("--config", type=str, default="config.yaml",
                         help="Path to YAML configuration file (default: config.yaml)")
     
@@ -577,12 +617,10 @@ def main():
                         help="Perform saturation analysis for two defined clades and plot them in one figure.")
     parser.add_argument("-b", "--bootstrap", type=int, default=100,
                         help="Number of random combinations for saturation analysis (default=100).")
-    # Optional markers for global saturation analysis
     parser.add_argument("--marker-core", default='o',
                         help="Marker shape for Core line in saturation analysis (default: 'o').")
     parser.add_argument("--marker-pan", default='o',
                         help="Marker shape for Shell+Private line in saturation analysis (default: 'o').")
-    # Options for cladepair saturation analysis
     parser.add_argument("--clade1", type=str,
                         default="Arabis_alpina,ET_AA21_2,ET_AA6,ET_AA7,ET_AA14,ET_AA23,ET_AA22",
                         help="Comma-separated list of species for clade1 (default provided).")
@@ -609,27 +647,29 @@ def main():
                         help="Generate Presence/Absence Variant (PAV) TSV file.")
     parser.add_argument("--matrix", action="store_true",
                         help="Generate Count Matrix TSV file.")
-    
-    # Input files (required only if not using config file)
     parser.add_argument("--hog", help="Path to HOGs TSV file (e.g. N0.tsv)")
     parser.add_argument("--fasta", help="Directory containing FASTA files")
-    # Output options
+    parser.add_argument("--funano", type=int, default=0, choices=[0,1,2,3,4,5,6],
+                        help="Perform functional annotation of pangenome compartments against UniProt database. "
+                             "Options: 0=disabled, 1=all compartments, 2=core only, 3=single-copy only, "
+                             "4=shell only, 5=genotype-specific (private) only, 6=cloud only")
+    parser.add_argument("--uniprot-db", type=str, default=None,
+                        help="Path to UniProt database (if not provided, will be downloaded automatically)")
+    parser.add_argument("--threads", type=int, default=8,
+                        help="Number of threads for BLASTP (default: 8)")
+    parser.add_argument("--keep-uniprot", action="store_true",
+                        help="Keep the downloaded UniProt database after annotation (default: delete after use)")
     parser.add_argument("-o", "--output", type=str, default=".",
                         help="Output directory to write files (default: current directory)")
     parser.add_argument("-p", "--prefix", type=str, default="",
                         help="Prefix to add to output file names (default: none)")
-    # Genevar transformation options
     parser.add_argument("--zscore", action="store_true",
                         help="Apply z-score normalization for gene variation heatmap (used with --genevar)")
     parser.add_argument("--log", action="store_true",
                         help="Apply log2(count+1) transformation for gene variation heatmap (used with --genevar)")
 
     args = parser.parse_args()
-
-    # Load configuration from YAML file
     config = load_config(args.config)
-    
-    # If config file was loaded, make --hog and --fasta optional
     if config and (args.hog is None or args.fasta is None):
         if 'hog_file' in config and args.hog is None:
             args.hog = config['hog_file']
@@ -640,9 +680,16 @@ def main():
         parser.error("The following arguments are required: --hog, --fasta (or provide them in config file)")
     
     args = merge_config_with_args(config, args)
-
-    if not os.path.exists(args.output):
-        os.makedirs(args.output, exist_ok=True)
+    os.makedirs(args.output, exist_ok=True)
+    results_dir = os.path.join(args.output, "results")
+    anno_dir = os.path.join(results_dir, "annotations")
+    blast_dir = os.path.join(results_dir, "blast_results")
+    peptides_dir = os.path.join(results_dir, "peptides")
+    temp_dir = os.path.join(args.output, "temp")
+    for directory in [results_dir, anno_dir, blast_dir, peptides_dir, temp_dir]:
+        os.makedirs(directory, exist_ok=True)
+    
+    print(f"[INFO] Results will be saved in: {os.path.abspath(results_dir)}")
 
     if not args.pan and not args.clade:
         args.pan = True
@@ -677,16 +724,15 @@ def main():
     else:
         transformation = None
 
-    # Generate PAV and/or Count Matrix files if requested
+    compartments_dir = os.path.join(results_dir, "compartments")
+    os.makedirs(compartments_dir, exist_ok=True)
     if args.pav:
-        pav_file = generate_pav_file(hogsfile, outdir, prefix, clade_filter)
+        pav_file = generate_pav_file(compartments_dir, prefix, clade_filter, hogsfile=args.hog)
         print(f"[INFO] Generated PAV file: {pav_file}")
-    
     if args.matrix:
-        count_file = generate_count_matrix(hogsfile, outdir, prefix, clade_filter)
+        count_file = generate_count_matrix(compartments_dir, prefix, clade_filter, hogsfile=args.hog)
         print(f"[INFO] Generated Count Matrix file: {count_file}")
-    
-    # Parse HOGs and missing genes (global or clade-specific)
+    outdir = compartments_dir
     dGeneNumbers, dHOGs, dSpecies, ddHOGs = parseHOGs(hogsfile, clade_filter)
     dGenesMissing = getMissingGenes(hogsfile, fasta_dir, clade_filter)
     cloud = []
@@ -694,7 +740,6 @@ def main():
         for g in dGenesMissing[sp]:
             cloud.append(g)
 
-    # Classify HOGs
     coreHOGs = {}
     scHOGs = {}
     shellHOGs = {}
@@ -723,31 +768,34 @@ def main():
     sorted_species_indices = sorted(dSpecies.keys())
     final_species_list = [dSpecies[i] for i in sorted_species_indices]
 
-    with open(os.path.join(outdir, f"{prefix}core.HOGs.tsv"), 'w') as fout:
-        print('hog', *final_species_list, sep='\t', file=fout)
-        for hog_id in coreHOGs:
-            print(hog_id, *dHOGs[hog_id], sep='\t', file=fout)
-
-    with open(os.path.join(outdir, f"{prefix}single-copy.HOGs.tsv"), 'w') as fout:
-        print('hog', *final_species_list, sep='\t', file=fout)
-        for hog_id in scHOGs:
-            print(hog_id, *dHOGs[hog_id], sep='\t', file=fout)
-
-    with open(os.path.join(outdir, f"{prefix}shell.HOGs.tsv"), 'w') as fout:
-        print('hog', *final_species_list, sep='\t', file=fout)
-        for hog_id in shellHOGs:
-            print(hog_id, *dHOGs[hog_id], sep='\t', file=fout)
-
-    with open(os.path.join(outdir, f"{prefix}gt-specific.HOGs.tsv"), 'w') as fout:
-        print('hog', *final_species_list, sep='\t', file=fout)
-        for hog_id in gtHOGs:
-            print(hog_id, *dHOGs[hog_id], sep='\t', file=fout)
-
-    with open(os.path.join(outdir, f"{prefix}cloud.unassigned_genes.tsv"), 'w') as fout:
+    panhog_classification_dir = os.path.join(compartments_dir, "panhog_classification")
+    os.makedirs(panhog_classification_dir, exist_ok=True)
+    hog_files = {
+        'core': coreHOGs,
+        'single-copy': scHOGs,
+        'shell': shellHOGs,
+        'gt-specific': gtHOGs
+    }
+    
+    for htype, hog_dict in hog_files.items():
+        out_file = os.path.join(panhog_classification_dir, f"{prefix}{htype}.HOGs.tsv")
+        with open(out_file, 'w') as fout:
+            print('hog', *final_species_list, sep='\t', file=fout)
+            for hog_id in hog_dict:
+                print(hog_id, *dHOGs[hog_id], sep='\t', file=fout)
+        print(f"[INFO] Generated {htype} HOGs file: {out_file}")
+    cloud_file = os.path.join(panhog_classification_dir, f"{prefix}cloud.unassigned_genes.tsv")
+    with open(cloud_file, 'w') as fout:
+        fout.write("species\tgenes\n")
         for sp in dGenesMissing:
-            print(sp, *dGenesMissing[sp], sep='\t', file=fout)
-
-    extract_private_genes(os.path.join(outdir, f"{prefix}gt-specific.HOGs.tsv"), outdir, prefix)
+            if dGenesMissing[sp]:
+                print(sp, *dGenesMissing[sp], sep='\t', file=fout)
+    print(f"[INFO] Generated cloud/unassigned genes file: {cloud_file}")
+    extract_private_genes(
+        os.path.join(panhog_classification_dir, f"{prefix}gt-specific.HOGs.tsv"),
+        panhog_classification_dir,
+        prefix
+    )
 
     if args.proteome is not None:
         if proteome_filter is None:
@@ -792,7 +840,157 @@ def main():
                                         color_pan_clade1=args.color_pan_clade1,
                                         color_core_clade2=args.color_core_clade2,
                                         color_pan_clade2=args.color_pan_clade2)
+    
+    if args.funano > 0:
+        import tempfile
+        import gzip
+        import shutil
+        print("\n=== Starting functional annotation of pangenome compartments ===")
+        try:
+            subprocess.run(["which", "makeblastdb"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(["which", "blastp"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError:
+            print("[ERROR] BLAST+ tools (makeblastdb and blastp) are required for functional annotation.")
+            print("Please install BLAST+ from: https://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE_TYPE=BlastDocs&DOC_TYPE=Download")
+            sys.exit(1)
+        selected_compartments = get_selected_compartments(args.funano)
+        if not selected_compartments:
+            print(f"[ERROR] Invalid funano value: {args.funano}. Use 1-6 or 0 to disable.")
+            sys.exit(1)
+        print(f"Selected compartments for annotation: {', '.join(selected_compartments)}")
+        with tempfile.TemporaryDirectory(dir=temp_dir) as temp_processing_dir:
+            uniprot_db = args.uniprot_db
+            if uniprot_db is None:
+                print("Downloading UniProt/Swiss-Prot database...")
+                uniprot_url = "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz"
+                uniprot_gz = os.path.join(temp_processing_dir, "uniprot_sprot.fasta.gz")
+                uniprot_db = os.path.join(temp_processing_dir, "uniprot_sprot.fasta")
+                try:
+                    subprocess.run(["wget", "--no-check-certificate", "-O", uniprot_gz, uniprot_url], check=True)
+                    with gzip.open(uniprot_gz, 'rb') as f_in:
+                        with open(uniprot_db, 'wb') as f_out:
+                            shutil.copyfileobj(f_in, f_out)
+                    print(f"Downloaded and extracted UniProt database to {uniprot_db}")
+                except Exception as e:
+                    print(f"[ERROR] Failed to download UniProt database: {e}")
+                    print("Please download it manually and provide the path with --uniprot-db")
+                    print(f"URL: {uniprot_url}")
+                    sys.exit(1)
+            if not os.path.exists(f"{uniprot_db}.phr"):
+                print("Creating BLAST database...")
+                try:
+                    subprocess.run(["makeblastdb", "-in", uniprot_db, "-dbtype", "prot"], check=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"[ERROR] Failed to create BLAST database: {e}")
+                    sys.exit(1)
+            all_compartment_files = {
+                'core': os.path.join(panhog_classification_dir, f"{prefix}core.HOGs.tsv"),
+                'single-copy': os.path.join(panhog_classification_dir, f"{prefix}single-copy.HOGs.tsv"),
+                'shell': os.path.join(panhog_classification_dir, f"{prefix}shell.HOGs.tsv"),
+                'private': os.path.join(panhog_classification_dir, f"{prefix}gt-specific.HOGs.tsv"),
+                'cloud': os.path.join(panhog_classification_dir, f"{prefix}cloud.unassigned_genes.tsv")
+            }
+            compartment_files = {k: v for k, v in all_compartment_files.items() if k in selected_compartments}
+            gene_to_sequence = load_all_sequences(fasta_dir)
+            if not gene_to_sequence:
+                print("[ERROR] No sequences were loaded. Please check your FASTA files and directory.")
+                sys.exit(1)
+            for comp_name, comp_file in compartment_files.items():
+                if not os.path.exists(comp_file):
+                    print(f"\n{comp_name.capitalize()} HOGs file not found: {comp_file}. Skipping...")
+                    continue
+                print(f"\n=== Processing {comp_name} compartment ===")
+                gene_ids = set()
+                with open(comp_file, 'r') as f:
+                    next(f)  # Skip header
+                    for line in f:
+                        parts = line.strip().split('\t')
+                        for gene_list in parts[1:]:  # First column is HOG ID, rest are gene lists
+                            for gene_id in gene_list.split(','):
+                                gene_id = gene_id.strip()
+                                if gene_id:  # Skip empty entries
+                                    gene_ids.add(gene_id)
+                if not gene_ids:
+                    print(f"No genes found in {comp_name} compartment. Skipping...")
+                    continue
+                print(f"Found {len(gene_ids)} genes in {comp_name} compartment")
+                comp_fasta = os.path.join(temp_processing_dir, f"{prefix}{comp_name}_proteins.fasta")
+                final_fasta = os.path.join(peptides_dir, f"{prefix}{comp_name}_proteins.faa")
+                with open(comp_fasta, 'w') as f_temp, open(final_fasta, 'w') as f_final:
+                    seq_count = 0
+                    for gene_id in gene_ids:
+                        if gene_id in gene_to_sequence:
+                            seq_record = f">{gene_id}\n{gene_to_sequence[gene_id]}\n"
+                            f_temp.write(seq_record)
+                            f_final.write(seq_record)
+                            seq_count += 1
+                        else:
+                            print(f"[WARNING] Sequence not found for gene ID: {gene_id}")
+                    if seq_count == 0:
+                        print(f"No valid sequences found for {comp_name} compartment. Skipping...")
+                        os.remove(final_fasta)
+                        continue
+                print(f"Running BLASTP for {comp_name} compartment...")
+                blast_output = os.path.join(blast_dir, f"{prefix}{comp_name}_uniprot_blast.xml")
+                blast_cline = NcbiblastpCommandline(
+                    query=comp_fasta,
+                    db=uniprot_db,
+                    out=blast_output,
+                    outfmt=5,  # XML format
+                    evalue=1e-5,
+                    num_threads=args.threads,
+                    max_target_seqs=1
+                )
+                try:
+                    stdout, stderr = blast_cline()
+                    print(f"BLASTP completed for {comp_name} compartment. Results saved to {blast_output}")
+                    annotation_file = os.path.join(anno_dir, f"{prefix}{comp_name}_annotations.tsv")
+                    with open(blast_output, 'rb') as blast_file, open(annotation_file, 'w', encoding='utf-8') as out_handle:
+                        out_handle.write("Query\tUniProt_ID\tDescription\tE-value\tBitScore\tAlignment_Length\tIdentity\tQuery_Coverage\n")
+                        for record in NCBIXML.parse(blast_file):
+                            if record.alignments:
+                                alignment = record.alignments[0]
+                                hsp = alignment.hsps[0]
+                                query_coverage = (hsp.align_length / float(record.query_length)) * 100
+                                identity = (hsp.identities / float(hsp.align_length)) * 100
+                                out_handle.write(f"{record.query}\t"
+                                              f"{alignment.hit_def.split('|')[1] if '|' in alignment.hit_def else alignment.hit_def.split()[0]}\t"
+                                              f"{alignment.hit_def}\t"
+                                              f"{hsp.expect:.2e}\t"
+                                              f"{hsp.bits:.1f}\t"
+                                              f"{hsp.align_length}\t"
+                                              f"{identity:.1f}%\t"
+                                              f"{query_coverage:.1f}%\n")
+                    print(f"Annotation report for {comp_name} compartment saved to {annotation_file}")
+                except Exception as e:
+                    print(f"[ERROR] Failed to run BLASTP for {comp_name} compartment: {e}")
+        
+            readme_path = os.path.join(results_dir, "README.md")
+            with open(readme_path, 'w', encoding='utf-8') as f:
+                f.write("# PanHOG Functional Annotation Results\n\n")
+                f.write("This directory contains the results of the functional annotation of pangenome compartments.\n\n")
+                f.write("## Directory Structure\n")
+                f.write("- `annotations/`: Contains TSV files with functional annotations for each pangenome compartment\n")
+                f.write("- `blast_results/`: Contains raw BLASTP output files in XML format\n")
+                f.write("- `peptides/`: Contains FASTA files of extracted protein sequences for each compartment\n")
+                f.write("\n## File Naming Convention\n")
+                prefix_str = f"{prefix}_" if prefix else ""
+                f.write(f"- `{prefix_str}{{compartment}}_annotations.tsv`: Annotation results for each compartment\n")
+                f.write(f"- `{prefix_str}{{compartment}}_uniprot_blast.xml`: Raw BLASTP results for each compartment\n")
+                f.write(f"- `{prefix_str}{{compartment}}_proteins.faa`: Extracted protein sequences for each compartment\n")
+                f.write("\n## Analysis Summary\n")
+                for comp_name, comp_file in compartment_files.items():
+                    if os.path.exists(comp_file):
+                        with open(comp_file) as f_comp:
+                            line_count = sum(1 for _ in f_comp) - 1
+                            f.write(f"- {comp_name.capitalize()} compartment: {line_count} HOGs/genes\n")
+
+        print(f"\n=== Analysis Complete ===")
+        print(f"Results have been saved to: {os.path.abspath(results_dir)}")
+        print(f"- Annotations: {os.path.abspath(anno_dir)}")
+        print(f"- BLAST results: {os.path.abspath(blast_dir)}")
+        print(f"- Protein sequences: {os.path.abspath(peptides_dir)}")
+        print(f"\nFor more information, see: {os.path.abspath(readme_path)}")
 
 if __name__ == "__main__":
     main()
-
