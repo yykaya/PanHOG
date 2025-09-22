@@ -10,6 +10,7 @@ dependencies:
   - k8
   - biopython
   - pandas
+  - blast
   - numpy
   - seaborn
   - matplotlib
