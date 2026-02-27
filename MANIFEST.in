@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+include environment.yml
+include example1.config.yaml
+include example2.config.yaml
+recursive-include conda-recipe *
