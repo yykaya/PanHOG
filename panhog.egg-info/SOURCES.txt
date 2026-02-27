@@ -1,0 +1,16 @@
+LICENSE
+MANIFEST.in
+PanHOG.py
+PangeneHOG.py
+README.md
+environment.yml
+example1.config.yaml
+example2.config.yaml
+setup.py
+conda-recipe/meta.yaml
+panhog.egg-info/PKG-INFO
+panhog.egg-info/SOURCES.txt
+panhog.egg-info/dependency_links.txt
+panhog.egg-info/entry_points.txt
+panhog.egg-info/requires.txt
+panhog.egg-info/top_level.txt
