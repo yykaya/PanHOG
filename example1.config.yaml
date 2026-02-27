@@ -8,7 +8,7 @@ prefix: ""
 
 # Analysis options
 pan: false
-clade: "Arabis_alpina.v5.1,AA21_2,AA6,AA7,AA14,AA23,AA22, etc." # Optional: Enable clade-specific analysis. When set to `true`, the program will analyze only the selected species instead of performing a full pangenome analysis.
+clade: "Arabis_alpina.v5.1,AA21_2,AA6,AA7,AA14,AA23,AA22, etc." # Optional: Enable clade-specific analysis
 
 # Optional analyses
 proteome: "ALL"  # or specify species list
@@ -17,7 +17,8 @@ saturation: true
 saturation_cladepair: true
 pav: true
 matrix: true
-
+summary: true
+random_hog_matrix: 1000
 
 # Bootstrap settings
 bootstrap: 10000
@@ -43,3 +44,18 @@ color_pan_clade2: "#3498db"
 # Transformation options
 zscore: false
 log: true
+
+# Ka/Ks analysis (requires CDS FASTA files and mafft)
+# kaks: true
+# cds: "/path/to/cds/fasta"
+# kaks_type: "core"       # core, shell, private, or all
+# kaks_method: "biopython" # biopython or kakscalculator
+# aligner: "mafft"         # mafft or muscle
+# backtrans: "naive"       # naive or pal2nal
+# reference: "Col_PEK"     # reference species for pairwise Ka/Ks
+
+# Phylogeny LCA analysis (requires Newick species tree)
+# species_tree: "/path/to/species_tree.nwk"
+
+# Supermatrix generation (requires CDS files)
+# supermatrix: true

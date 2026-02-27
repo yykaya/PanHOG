@@ -1,22 +1,17 @@
-name: panhog_pangene
+name: panhog
 channels:
   - bioconda
   - conda-forge
   - defaults
 dependencies:
   - python>=3.8
-  - pip
-  - miniprot
-  - k8
-  - biopython
-  - pandas
-  - blast
   - numpy
-  - seaborn
+  - pandas
   - matplotlib
+  - seaborn
+  - biopython
   - pyyaml
-  - diamond
-  - seqtk
+  - blast
   - mafft
   - pip:
-    - pangene
+    - panhog

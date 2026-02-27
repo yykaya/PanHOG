@@ -8,16 +8,34 @@ import random
 import statistics
 import subprocess
 from collections import defaultdict
-import yaml
 
-# Import Biopython for BLAST handling (SeqIO is now implemented manually)
-from Bio.Blast import NCBIXML
-from Bio.Blast.Applications import NcbiblastpCommandline
+try:
+    import yaml
+    HAS_YAML = True
+except ImportError:
+    HAS_YAML = False
 
-import matplotlib
-matplotlib.use('Agg')  #environments without an X server
-import matplotlib.pyplot as plt
-import seaborn as sns
+try:
+    from Bio.Blast import NCBIXML
+    from Bio.Blast.Applications import NcbiblastpCommandline
+    from Bio import SeqIO, AlignIO, Phylo
+    from Bio.Seq import Seq
+    from Bio.SeqRecord import SeqRecord
+    from Bio.Align import MultipleSeqAlignment
+    from Bio.Data import CodonTable
+    HAS_BIOPYTHON = True
+except ImportError:
+    HAS_BIOPYTHON = False
+
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+
 import numpy as np
 import pandas as pd
 
@@ -33,7 +51,12 @@ def load_config(config_file):
     if not os.path.exists(config_file):
         print(f"[WARNING] Config file '{config_file}' not found. Using command-line arguments only.")
         return {}
-    
+
+    if not HAS_YAML:
+        print(f"[WARNING] 'PyYAML' module not installed. Cannot load config file '{config_file}'.")
+        print("         To use config files, install it via: pip install PyYAML")
+        return {}
+
     try:
         with open(config_file, 'r') as f:
             config = yaml.safe_load(f)
@@ -56,9 +79,9 @@ def merge_config_with_args(config, args):
             current_value = getattr(args, key)
             if isinstance(value, bool) and not current_value:
                 setattr(args, key, value)
-            elif not isinstance(value, bool) and current_value in [None, False, ".", "", 100]:  # common defaults
+            elif not isinstance(value, bool) and current_value in [None, False, ".", "", 100]:
                 setattr(args, key, value)
-    
+
     return args
 
 ##############################
@@ -72,7 +95,7 @@ class HOG:
         self.cultivars = set()
         self.members = defaultdict(dict)
         self.passport = []
-        
+
     def addSubGenome(self, s):
         self.subgenomes.append(s)
     def addOGID(self, o):
@@ -121,8 +144,14 @@ def load_all_sequences(fasta_dir):
     """
     gene_to_sequence = {}
     fasta_files = []
-    for ext in ['.fasta', '.faa', '.fa', '.pep']:
-        fasta_files.extend(glob.glob(os.path.join(fasta_dir, f'*{ext}')))
+    extensions = ['.fasta', '.faa', '.fa', '.pep', '.pep.fa']
+    extensions += [e.upper() for e in extensions]
+
+    for ext in extensions:
+        found = glob.glob(os.path.join(fasta_dir, f'*{ext}'))
+        fasta_files.extend(found)
+
+    fasta_files = list(set(fasta_files))
     if not fasta_files:
         print(f"[WARNING] No FASTA files found in {fasta_dir}")
         return gene_to_sequence
@@ -134,17 +163,13 @@ def load_all_sequences(fasta_dir):
             gene_to_sequence.update(file_seqs)
         except Exception as e:
             print(f"[WARNING] Error processing {fasta_file}: {e}")
-    
+
     print(f"Loaded {len(gene_to_sequence)} sequences from {len(fasta_files)} files")
     return gene_to_sequence
 
 def get_selected_compartments(funano_value):
     """
     Determine which compartments to process based on the funano argument value.
-    Args:
-        funano_value (int): The funano argument value (1-6)
-    Returns:
-        list: List of compartment names to process
     """
     compartment_mapping = {
         1: ['core', 'single-copy', 'shell', 'private', 'cloud'],
@@ -159,7 +184,7 @@ def get_selected_compartments(funano_value):
 
 ###########################################################
 # getMissingGenes: collects "cloud" genes by comparing FASTA
-# to HOG membership (no name cleaning).
+# to HOG membership.
 ###########################################################
 
 def getMissingGenes(hogsfile, fasta_dir, clade_filter=None):
@@ -185,11 +210,14 @@ def getMissingGenes(hogsfile, fasta_dir, clade_filter=None):
 
     fasta_files = glob.glob(os.path.join(fasta_dir, "*.fa")) + glob.glob(os.path.join(fasta_dir, "*.fasta"))
     for fasta in fasta_files:
-        sp = os.path.basename(fasta).split('.')[0]
+        sp = os.path.splitext(os.path.basename(fasta))[0]
         if clade_filter and sp not in clade_filter:
             continue
         seq_dict = parse_fasta(fasta)
         dAllGenes[sp] = list(seq_dict.keys())
+        base_sp = sp.split('.')[0]
+        if base_sp != sp:
+            dAllGenes[base_sp] = list(seq_dict.keys())
 
     for idx in dSpecies:
         sp_name = dSpecies[idx]
@@ -208,15 +236,6 @@ def getMissingGenes(hogsfile, fasta_dir, clade_filter=None):
 def generate_pav_file(outdir, prefix, clade_filter=None, hogsfile=None):
     """
     Generate a Presence/Absence Variant (PAV) TSV file from HOGs file.
-    
-    Args:
-        outdir (str): Output directory
-        prefix (str): Prefix for output filename
-        clade_filter (set, optional): Set of species to include. If None, include all.
-        hogsfile (str): Path to input HOGs TSV file.
-    
-    Returns:
-        str: Path to the generated PAV file
     """
     df = pd.read_csv(hogsfile, sep='\t')
     columns_to_drop = ['Gene', 'Tree', 'Parent', 'Clade']
@@ -230,7 +249,7 @@ def generate_pav_file(outdir, prefix, clade_filter=None, hogsfile=None):
     species_cols = [col for col in df.columns if col not in ['HOG', 'OG']]
     for col in species_cols:
         df[col] = df[col].apply(lambda x: 1 if pd.notna(x) and str(x).strip() != '' else 0)
-    
+
     pav_file = os.path.join(outdir, f"{prefix}PAV.tsv")
     df.to_csv(pav_file, sep='\t', index=False)
     return pav_file
@@ -238,15 +257,6 @@ def generate_pav_file(outdir, prefix, clade_filter=None, hogsfile=None):
 def generate_count_matrix(outdir, prefix, clade_filter=None, hogsfile=None):
     """
     Generate a Count Matrix TSV file from HOGs file.
-    
-    Args:
-        outdir (str): Output directory
-        prefix (str): Prefix for output filename
-        clade_filter (set, optional): Set of species to include. If None, include all.
-        hogsfile (str): Path to input HOGs TSV file.
-    
-    Returns:
-        str: Path to the generated Count Matrix file
     """
     df = pd.read_csv(hogsfile, sep='\t')
     columns_to_drop = ['Gene', 'Tree', 'Parent', 'Clade']
@@ -260,7 +270,7 @@ def generate_count_matrix(outdir, prefix, clade_filter=None, hogsfile=None):
     species_cols = [col for col in df.columns if col not in ['HOG', 'OG']]
     for col in species_cols:
         df[col] = df[col].apply(lambda x: len(str(x).split(', ')) if pd.notna(x) and str(x).strip() != '' else 0)
-    
+
     count_file = os.path.join(outdir, f"{prefix}CountMatrix.tsv")
     df.to_csv(count_file, sep='\t', index=False)
     return count_file
@@ -311,11 +321,6 @@ def parseHOGs(hogsfile, clade_filter=None):
 def extract_private_genes(gt_hogs_file, outdir=None, prefix=""):
     """
     Extract private genes from genotype-specific HOGs file.
-    
-    Args:
-        gt_hogs_file (str): Path to genotype-specific HOGs TSV file
-        outdir (str, optional): Output directory. If None, uses the same directory as input file.
-        prefix (str, optional): Prefix for output filenames
     """
     if outdir is None:
         outdir = os.path.dirname(gt_hogs_file)
@@ -380,9 +385,10 @@ def build_pan_proteome(coreHOGs, scHOGs, shellHOGs, gtHOGs,
                         all_genes_to_write.update(genes)
     proteome_fasta = os.path.join(outdir, f"{prefix}pan_proteome.fa")
     with open(proteome_fasta, "w") as fout:
-        for fasta in glob.glob(os.path.join(fasta_dir, "*.fa")) + glob.glob(os.path.join(fasta_dir, "*.fasta")):
-            sp = os.path.basename(fasta).split('.')[0]
-            if sp not in species_filter:
+        for fasta in glob.glob(os.path.join(fasta_dir, "*.fa")) + glob.glob(os.path.join(fasta_dir, "*.fasta")) + glob.glob(os.path.join(fasta_dir, "*.pep.fa")):
+            sp = os.path.splitext(os.path.basename(fasta))[0]
+            base_sp = sp.split('.')[0]
+            if sp not in species_filter and base_sp not in species_filter:
                 continue
             seq_dict = parse_fasta(fasta)
             for gene_id in all_genes_to_write:
@@ -396,6 +402,10 @@ def build_pan_proteome(coreHOGs, scHOGs, shellHOGs, gtHOGs,
 
 def plot_genevar_heatmap(dGeneNumbers, dSpecies, coreHOGs, shellHOGs, gtHOGs,
                          outdir, prefix, genevar_filter, transformation):
+    if not HAS_MATPLOTLIB:
+        print("[WARNING] matplotlib not available. Skipping heatmap.")
+        return
+
     sorted_keys = sorted(dSpecies.keys())
     sp_order = [dSpecies[i] for i in sorted_keys]
     hog_ids = sorted(dGeneNumbers.keys())
@@ -458,54 +468,157 @@ def plot_genevar_heatmap(dGeneNumbers, dSpecies, coreHOGs, shellHOGs, gtHOGs,
     print(f"[INFO] Saved gene variation heatmap to: {prefix}genevar_heatmap.[png|pdf|svg]")
 
 ##################################################
-# Saturation Analysis (missing from original)
+# Summary Statistics and Visualization
 ##################################################
 
-def run_saturation_analysis(ddHOGs, species_list, outdir, prefix, bootstrap=100, 
-                           marker_core='o', marker_pan='o'):
+def generate_summary_stats(dGeneNumbers, ddHOGs, dSpecies, outdir, prefix):
     """
-    Run saturation analysis for the given species list.
+    Generate summary statistics for Core, Shell, and Private HOGs/Genes.
     """
-    n = len(species_list)
-    results = {k: [] for k in range(1, n+1)}
-    
-    for k in range(1, n+1):
-        for _ in range(bootstrap):
-            subset = random.sample(species_list, k)
-            core_count, pan_count = classify_subset_pan_core(subset, ddHOGs)
-            results[k].append((core_count, pan_count))
-    
-    k_vals, core_means, core_stds, pan_means, pan_stds = [], [], [], [], []
-    for k in range(1, n+1):
-        core_list = [x[0] for x in results[k]]
-        pan_list = [x[1] for x in results[k]]
-        k_vals.append(k)
-        core_means.append(statistics.mean(core_list))
-        core_stds.append(statistics.pstdev(core_list))
-        pan_means.append(statistics.mean(pan_list))
-        pan_stds.append(statistics.pstdev(pan_list))
-    
-    plt.figure(figsize=(7, 6))
-    plt.errorbar(k_vals, core_means, yerr=core_stds, color='red',
-                 label='Core', fmt=f'-{marker_core}')
-    plt.errorbar(k_vals, pan_means, yerr=pan_stds, color='blue',
-                 label='Shell+Private', fmt=f'-{marker_pan}')
-    
-    plt.xlabel("Number of Accessions")
-    plt.ylabel("Number of HOGs")
-    plt.title("Saturation Analysis")
-    plt.legend()
+    print("[INFO] Generating summary statistics...")
+
+    stats = defaultdict(lambda: defaultdict(int))
+    total_species = len(dSpecies)
+
+    for hog_id, counts in dGeneNumbers.items():
+        category = None
+        if counts.count(0) == 0:
+            category = "Core"
+        elif counts.count(1) == total_species:
+            category = "Core"
+        elif counts.count(0) in range(1, total_species - 1) and sum(counts) != 1:
+            category = "Shell"
+        elif (counts.count(0) != 0 and sum(counts) == 1) or (counts.count(0) == total_species - 1):
+            category = "Private"
+
+        if category:
+            for idx, sp_name in dSpecies.items():
+                gene_count = counts[idx] if idx < len(counts) else 0
+                if gene_count > 0:
+                    stats[sp_name][f"{category}_HOG_Count"] += 1
+                    stats[sp_name][f"{category}_Gene_Count"] += gene_count
+
+    data = []
+    for sp_name in sorted(dSpecies.values()):
+        row = {'Species': sp_name}
+        for cat in ["Core", "Shell", "Private"]:
+            row[f"{cat}_HOG_Count"] = stats[sp_name].get(f"{cat}_HOG_Count", 0)
+            row[f"{cat}_Gene_Count"] = stats[sp_name].get(f"{cat}_Gene_Count", 0)
+        data.append(row)
+
+    df = pd.DataFrame(data)
+
+    for cat in ["Core", "Shell", "Private"]:
+        df[f"{cat}_Gene_HOG_Ratio"] = df[f"{cat}_Gene_Count"] / df[f"{cat}_HOG_Count"]
+        df[f"{cat}_Gene_HOG_Ratio"] = df[f"{cat}_Gene_HOG_Ratio"].fillna(0)
+
+    stats_file = os.path.join(outdir, f"{prefix}summary_stats.tsv")
+    df.to_csv(stats_file, sep='\t', index=False)
+    print(f"[INFO] Saved summary statistics to: {stats_file}")
+
+    return df
+
+def plot_summary_stats(df, outdir, prefix):
+    """
+    Plot stacked bar chart for Gene/HOG ratios.
+    """
+    if not HAS_MATPLOTLIB:
+        print("[WARNING] matplotlib not available. Skipping summary plot.")
+        return
+
+    palette = {"Core": "#F08080", "Shell": "#FFC000", "Private": "#5D3FD3"}
+
+    df_plot = df.set_index('Species')[['Core_Gene_HOG_Ratio', 'Shell_Gene_HOG_Ratio', 'Private_Gene_HOG_Ratio']]
+    df_plot.columns = ['Core', 'Shell', 'Private']
+
+    ax = df_plot.plot(kind='bar', stacked=True, color=[palette['Core'], palette['Shell'], palette['Private']], figsize=(12, 6))
+
+    plt.title("Gene/HOG Ratio per Species")
+    plt.ylabel("Gene/HOG Ratio")
+    plt.xlabel("Species")
+    plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
-    
+
     for ext in ['png', 'pdf', 'svg']:
-        sat_file = os.path.join(outdir, f"{prefix}saturation_analysis.{ext}")
-        plt.savefig(sat_file, dpi=300)
+        plot_file = os.path.join(outdir, f"{prefix}summary_stats_plot.{ext}")
+        plt.savefig(plot_file, dpi=300)
     plt.close()
-    
-    print(f"[INFO] Saved saturation analysis figure to: {prefix}saturation_analysis.[png|pdf|svg]")
+    print(f"[INFO] Saved summary stats plot to: {prefix}summary_stats_plot.[png|pdf|svg]")
 
 ##################################################
-# Saturation Analysis for defined clades (cladepair)
+# Random HOG Matrix Visualization
+##################################################
+
+def generate_random_hog_matrix(dGeneNumbers, dSpecies, outdir, prefix, n_hogs=1000):
+    """
+    Generate a matrix plot for N random HOGs.
+    Values: 0 (Absent), 1 (Single), 2 (Multi).
+    Colors: White, #E06B80, #CD2C58.
+    """
+    print(f"\n=== Generating Random HOG Matrix (N={n_hogs}) ===")
+
+    all_hogs = list(dGeneNumbers.keys())
+    if len(all_hogs) < n_hogs:
+        print(f"[WARNING] Requested {n_hogs} HOGs, but only {len(all_hogs)} available. Using all.")
+        selected_hogs = all_hogs
+    else:
+        selected_hogs = random.sample(all_hogs, n_hogs)
+
+    matrix_data = []
+    species_names = [dSpecies[i] for i in sorted(dSpecies.keys())]
+
+    for hog_id in selected_hogs:
+        counts = dGeneNumbers[hog_id]
+        col_data = []
+        for i in sorted(dSpecies.keys()):
+            c = counts[i] if i < len(counts) else 0
+            if c == 0:
+                val = 0
+            elif c == 1:
+                val = 1
+            else:
+                val = 2
+            col_data.append(val)
+        matrix_data.append(col_data)
+
+    df = pd.DataFrame(matrix_data, index=selected_hogs, columns=species_names).T
+
+    out_tsv = os.path.join(outdir, f"{prefix}random_hog_matrix.tsv")
+    df.to_csv(out_tsv, sep='\t')
+    print(f"[INFO] Saved matrix data to: {out_tsv}")
+
+    if not HAS_MATPLOTLIB:
+        print("[WARNING] Skipping plot generation because matplotlib is not available.")
+        return
+
+    from matplotlib.colors import ListedColormap
+    from matplotlib.patches import Patch
+
+    cmap = ListedColormap(['white', '#E06B80', '#CD2C58'])
+
+    plt.figure(figsize=(15, 8))
+    ax = sns.heatmap(df, cmap=cmap, cbar=False, yticklabels=True, xticklabels=False)
+
+    legend_elements = [
+        Patch(facecolor='white', edgecolor='gray', label='Absent'),
+        Patch(facecolor='#E06B80', edgecolor='gray', label='Single-copy'),
+        Patch(facecolor='#CD2C58', edgecolor='gray', label='Multi-copy')
+    ]
+    ax.legend(handles=legend_elements, title='Copy Number', loc='center left', bbox_to_anchor=(1, 0.5))
+
+    plt.title(f"Gene distribution of {len(selected_hogs)} random HOGs")
+    plt.xlabel("Hierarchical Orthogroup (HOG)")
+    plt.ylabel("Genome")
+    plt.tight_layout()
+
+    for ext in ['png', 'svg']:
+        out_plot = os.path.join(outdir, f"{prefix}random_hog_matrix.{ext}")
+        plt.savefig(out_plot, dpi=300)
+    plt.close()
+    print(f"[INFO] Saved matrix plots to: {prefix}random_hog_matrix.[png|svg]")
+
+##################################################
+# Saturation Analysis
 ##################################################
 
 def classify_subset_pan_core(subset_species, ddHOGs):
@@ -531,12 +644,67 @@ def classify_subset_pan_core(subset_species, ddHOGs):
             shell_private_count += 1
     return core_count, shell_private_count
 
+def run_saturation_analysis(ddHOGs, species_list, outdir, prefix, bootstrap=100,
+                           marker_core='o', marker_pan='o'):
+    """
+    Run saturation analysis for the given species list.
+    """
+    if not HAS_MATPLOTLIB:
+        print("[WARNING] matplotlib not available. Skipping saturation plot.")
+        return
+
+    n = len(species_list)
+    results = {k: [] for k in range(1, n+1)}
+
+    for k in range(1, n+1):
+        for _ in range(bootstrap):
+            subset = random.sample(species_list, k)
+            core_count, pan_count = classify_subset_pan_core(subset, ddHOGs)
+            results[k].append((core_count, pan_count))
+
+    k_vals, core_means, core_stds, pan_means, pan_stds = [], [], [], [], []
+    for k in range(1, n+1):
+        core_list = [x[0] for x in results[k]]
+        pan_list = [x[1] for x in results[k]]
+        k_vals.append(k)
+        core_means.append(statistics.mean(core_list))
+        core_stds.append(statistics.pstdev(core_list))
+        pan_means.append(statistics.mean(pan_list))
+        pan_stds.append(statistics.pstdev(pan_list))
+
+    plt.figure(figsize=(7, 6))
+    plt.errorbar(k_vals, core_means, yerr=core_stds, color='red',
+                 label='Core', fmt=f'-{marker_core}')
+    plt.errorbar(k_vals, pan_means, yerr=pan_stds, color='blue',
+                 label='Shell+Private', fmt=f'-{marker_pan}')
+
+    plt.xlabel("Number of Accessions")
+    plt.ylabel("Number of HOGs")
+    plt.title("Saturation Analysis")
+    plt.legend()
+    plt.tight_layout()
+
+    for ext in ['png', 'pdf', 'svg']:
+        sat_file = os.path.join(outdir, f"{prefix}saturation_analysis.{ext}")
+        plt.savefig(sat_file, dpi=300)
+    plt.close()
+
+    print(f"[INFO] Saved saturation analysis figure to: {prefix}saturation_analysis.[png|pdf|svg]")
+
+##################################################
+# Saturation Analysis for defined clades (cladepair)
+##################################################
+
 def run_saturation_analysis_defined(ddHOGs, clade1, clade2, outdir, prefix,
-                                    bootstrap=100, 
+                                    bootstrap=100,
                                     marker_core_clade1='^', marker_pan_clade1='^',
                                     marker_core_clade2='s', marker_pan_clade2='s',
                                     color_core_clade1='#c0392b', color_pan_clade1='#f1c40f',
                                     color_core_clade2='#c0392b', color_pan_clade2='#3498db'):
+    if not HAS_MATPLOTLIB:
+        print("[WARNING] matplotlib not available. Skipping cladepair saturation plot.")
+        return
+
     n1 = len(clade1)
     results1 = {k: [] for k in range(1, n1+1)}
     for k in range(1, n1+1):
@@ -591,17 +759,606 @@ def run_saturation_analysis_defined(ddHOGs, clade1, clade2, outdir, prefix,
     print(f"[INFO] Saved defined saturation analysis figure to: {prefix}saturation_analysis_defined.[png|pdf|svg]")
 
 ##################################################
+# Ka/Ks Calculation Pipeline
+##################################################
+
+def load_cds_sequences(cds_dir):
+    """
+    Load all CDS sequences from FASTA files in the given directory.
+    """
+    gene_to_sequence = {}
+    fasta_files = []
+    for ext in ['.fasta', '.faa', '.fa', '.ffn', '.cds', '.fna']:
+        fasta_files.extend(glob.glob(os.path.join(cds_dir, f'*{ext}')))
+
+    if not fasta_files:
+        print(f"[WARNING] No CDS FASTA files found in {cds_dir}")
+        return gene_to_sequence
+
+    print(f"\nIndexing CDS sequences from {len(fasta_files)} files...")
+    for fasta_file in fasta_files:
+        try:
+            with open(fasta_file, 'r') as f:
+                current_id = None
+                current_seq = []
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line.startswith(">"):
+                        if current_id:
+                            gene_to_sequence[current_id] = "".join(current_seq)
+                        current_id = line[1:].split('|')[0].split()[0]
+                        current_seq = []
+                    else:
+                        current_seq.append(line)
+                if current_id:
+                    gene_to_sequence[current_id] = "".join(current_seq)
+        except Exception as e:
+            print(f"[WARNING] Error processing {fasta_file}: {e}")
+
+    print(f"Loaded {len(gene_to_sequence)} CDS sequences")
+    return gene_to_sequence
+
+def run_alignment(input_fasta, output_aln, aligner="mafft", mafft_path="mafft", muscle_path="muscle"):
+    """
+    Run protein alignment using specified tool.
+    """
+    if aligner == "mafft":
+        cmd = f"{mafft_path} --quiet --auto {input_fasta} > {output_aln}"
+    elif aligner == "muscle":
+        cmd = f"{muscle_path} -in {input_fasta} -out {output_aln} -quiet"
+    else:
+        print(f"[ERROR] Unknown aligner: {aligner}")
+        return False
+
+    try:
+        subprocess.check_call(cmd, shell=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+def run_pal2nal(prot_aln, cds_fasta, output_codon_aln, pal2nal_path="pal2nal.pl"):
+    """
+    Run PAL2NAL to generate codon alignment.
+    """
+    cmd = f"{pal2nal_path} {prot_aln} {cds_fasta} -output fasta -nomismatch > {output_codon_aln}"
+    try:
+        subprocess.check_call(cmd, shell=True)
+        return True
+    except Exception:
+        return False
+
+def naive_back_translation(prot_aln_file, cds_seqs, output_codon_aln):
+    """
+    Internal naive back-translation.
+    """
+    if not HAS_BIOPYTHON:
+        return False
+    try:
+        alignment = AlignIO.read(prot_aln_file, "fasta")
+        aligned_cds = []
+        for record in alignment:
+            g_id = record.id
+            p_seq = str(record.seq)
+            if g_id not in cds_seqs:
+                continue
+            c_seq = cds_seqs[g_id]
+
+            new_c_seq = []
+            c_idx = 0
+            for aa in p_seq:
+                if aa == '-':
+                    new_c_seq.append('---')
+                else:
+                    codon = c_seq[c_idx:c_idx+3]
+                    new_c_seq.append(codon)
+                    c_idx += 3
+
+            final_seq_str = "".join(new_c_seq)
+            expected_len = len(alignment[0]) * 3
+            if len(final_seq_str) != expected_len:
+                continue
+
+            aligned_cds.append(SeqRecord(Seq(final_seq_str), id=g_id, description=""))
+
+        if len(aligned_cds) < 2:
+            return False
+
+        AlignIO.write(MultipleSeqAlignment(aligned_cds), output_codon_aln, "fasta")
+        return True
+    except Exception:
+        return False
+
+def calculate_ng86(aligned_seqs):
+    """
+    Simplified Nei-Gojobori (1986) method for Ka/Ks.
+    """
+    import itertools
+
+    n_seqs = len(aligned_seqs)
+    if n_seqs < 2:
+        return None, None, None
+
+    table = CodonTable.unambiguous_dna_by_id[1]
+    pairs = list(itertools.combinations(aligned_seqs, 2))
+
+    valid_pairs = 0
+    total_ka = 0
+    total_ks = 0
+
+    for seq1, seq2 in pairs:
+        if len(seq1) != len(seq2):
+            continue
+
+        S_sites = 0
+        N_sites = 0
+        S_diff = 0
+        N_diff = 0
+
+        for i in range(0, len(seq1), 3):
+            c1 = seq1[i:i+3]
+            c2 = seq2[i:i+3]
+
+            if len(c1) < 3 or len(c2) < 3:
+                continue
+            if '-' in c1 or '-' in c2:
+                continue
+            if 'N' in c1 or 'N' in c2:
+                continue
+
+            try:
+                aa1 = table.forward_table.get(c1, '*')
+                aa2 = table.forward_table.get(c2, '*')
+            except Exception:
+                continue
+
+            if aa1 == '*' or aa2 == '*':
+                continue
+
+            diffs = sum(1 for j in range(3) if c1[j] != c2[j])
+            if diffs == 0:
+                continue
+
+            if aa1 == aa2:
+                S_diff += diffs
+                S_sites += 1
+            else:
+                N_diff += diffs
+                N_sites += 2.5
+
+        pS = S_diff / (S_sites + 1e-9)
+        pN = N_diff / (N_sites + 1e-9)
+
+        try:
+            Ks = -0.75 * np.log(1 - 4*pS/3)
+            Ka = -0.75 * np.log(1 - 4*pN/3)
+        except Exception:
+            Ks = pS
+            Ka = pN
+
+        if Ks > 0:
+            total_ka += Ka
+            total_ks += Ks
+            valid_pairs += 1
+
+    if valid_pairs == 0:
+        return 0, 0, 0
+
+    avg_ka = total_ka / valid_pairs
+    avg_ks = total_ks / valid_pairs
+    ratio = avg_ka / avg_ks if avg_ks > 0 else 0
+
+    return avg_ka, avg_ks, ratio
+
+def run_kaks_pipeline(hog_type, method, cds_dir, fasta_dir, dGeneNumbers, ddHOGs, dSpecies, outdir, prefix,
+                      aligner="mafft", backtrans="naive", reference=None,
+                      mafft_path="mafft", muscle_path="muscle", pal2nal_path="pal2nal.pl",
+                      kakscalculator_path="KaKs_Calculator"):
+    """
+    Orchestrate the Ka/Ks calculation with logic for Paralogs (Private genes).
+    """
+    if not HAS_BIOPYTHON:
+        print("[ERROR] Biopython is required for Ka/Ks calculation. Skipping.")
+        return
+
+    print(f"\n=== Starting Ka/Ks Calculation ({method}) ===")
+    print(f"Configuration: Aligner={aligner}, BackTrans={backtrans}, Reference={reference}")
+
+    cds_seqs = load_cds_sequences(cds_dir)
+    if not cds_seqs:
+        print("[ERROR] No CDS sequences loaded. Cannot proceed with Ka/Ks.")
+        return
+
+    prot_seqs = load_all_sequences(fasta_dir)
+
+    selected_hogs = []
+    total_species = len(dSpecies)
+
+    print(f"Selecting {hog_type} HOGs...")
+    for hog_id, counts in dGeneNumbers.items():
+        is_selected = False
+        if hog_type == "all":
+            is_selected = True
+        elif hog_type == "core":
+            if counts.count(0) == 0:
+                is_selected = True
+        elif hog_type == "shell":
+            if counts.count(0) in range(1, total_species - 1) and sum(counts) != 1:
+                is_selected = True
+        elif hog_type == "private":
+            if (counts.count(0) != 0 and sum(counts) == 1) or (counts.count(0) == total_species - 1):
+                is_selected = True
+
+        if is_selected:
+            selected_hogs.append(hog_id)
+
+    print(f"Selected {len(selected_hogs)} HOGs for analysis.")
+
+    results = []
+    import shutil
+
+    kaks_dir = os.path.join(outdir, "kaks_results")
+    os.makedirs(kaks_dir, exist_ok=True)
+
+    for i, hog_id in enumerate(selected_hogs):
+        if i % 10 == 0:
+            print(f"Processing HOG {i+1}/{len(selected_hogs)}: {hog_id}")
+
+        hog_obj = ddHOGs[hog_id]
+        hog_genes = []
+        hog_species_map = {}
+
+        for sp in hog_obj.members:
+            glist = hog_obj.members[sp].get('', "")
+            if glist:
+                genes = [g.strip() for g in glist.split(',')]
+                hog_genes.extend(genes)
+                for g in genes:
+                    hog_species_map[g] = sp
+
+        valid_genes = [g for g in hog_genes if g in prot_seqs and g in cds_seqs]
+
+        if len(valid_genes) < 2:
+            continue
+
+        temp_prot = os.path.join(kaks_dir, f"temp_{hog_id}.faa")
+        temp_cds_in = os.path.join(kaks_dir, f"temp_{hog_id}.cds")
+
+        with open(temp_prot, "w") as f_p, open(temp_cds_in, "w") as f_c:
+            for g in valid_genes:
+                f_p.write(f">{g}\n{prot_seqs[g]}\n")
+                f_c.write(f">{g}\n{cds_seqs[g]}\n")
+
+        temp_aln = os.path.join(kaks_dir, f"temp_{hog_id}.aln")
+        if not run_alignment(temp_prot, temp_aln, aligner, mafft_path, muscle_path):
+            continue
+
+        temp_codon_aln = os.path.join(kaks_dir, f"temp_{hog_id}.codon.aln")
+        success_bt = False
+
+        if backtrans == "pal2nal":
+            success_bt = run_pal2nal(temp_aln, temp_cds_in, temp_codon_aln, pal2nal_path)
+            if not success_bt:
+                success_bt = naive_back_translation(temp_aln, cds_seqs, temp_codon_aln)
+        else:
+            success_bt = naive_back_translation(temp_aln, cds_seqs, temp_codon_aln)
+
+        if not success_bt:
+            continue
+
+        try:
+            aligned_cds_obj = AlignIO.read(temp_codon_aln, "fasta")
+            aligned_ids = [r.id for r in aligned_cds_obj]
+        except Exception:
+            continue
+
+        if method == "biopython":
+            aligned_seqs = [str(r.seq) for r in aligned_cds_obj]
+            ka, ks, ratio = calculate_ng86(aligned_seqs)
+            if ka is not None:
+                results.append({
+                    "HOG": hog_id,
+                    "Ka": ka,
+                    "Ks": ks,
+                    "Ka_Ks_Ratio": ratio,
+                    "Num_Seqs": len(valid_genes)
+                })
+        elif method == "kakscalculator":
+            import itertools
+            axt_file = os.path.join(kaks_dir, f"temp_{hog_id}.axt")
+            kaks_out = os.path.join(kaks_dir, f"temp_{hog_id}.kaks")
+
+            current_reference = reference
+            ref_exists_in_hog = any(hog_species_map.get(g) == reference for g in aligned_ids)
+
+            if not ref_exists_in_hog and hog_type == 'private':
+                current_reference = None
+            elif not ref_exists_in_hog and hog_type != 'private':
+                continue
+
+            with open(axt_file, "w") as f_axt:
+                if current_reference:
+                    ref_genes = [g for g in aligned_ids if hog_species_map.get(g) == current_reference]
+                    ref_id = ref_genes[0]
+                    ref_seq = str(aligned_cds_obj[aligned_ids.index(ref_id)].seq)
+                    for j, q_id in enumerate(aligned_ids):
+                        q_sp = hog_species_map.get(q_id)
+                        if q_sp == current_reference:
+                            continue
+                        q_seq = str(aligned_cds_obj[j].seq)
+                        f_axt.write(f"{ref_id}-{q_id}\n{ref_seq}\n{q_seq}\n\n")
+                else:
+                    pairs = list(itertools.combinations(aligned_ids, 2))
+                    for id1, id2 in pairs:
+                        seq1 = str(aligned_cds_obj[aligned_ids.index(id1)].seq)
+                        seq2 = str(aligned_cds_obj[aligned_ids.index(id2)].seq)
+                        f_axt.write(f"{id1}-{id2}\n{seq1}\n{seq2}\n\n")
+
+            cmd = f"{kakscalculator_path} -i {axt_file} -o {kaks_out} -m MA -c 1"
+            subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            if os.path.exists(kaks_out):
+                try:
+                    df_kaks = pd.read_csv(kaks_out, sep="\t")
+                    for _, row in df_kaks.iterrows():
+                        results.append({
+                            "HOG": hog_id,
+                            "Sequence": row['Sequence'],
+                            "Ka": row['Ka'],
+                            "Ks": row['Ks'],
+                            "Ka_Ks_Ratio": row['Ka/Ks']
+                        })
+                except Exception:
+                    pass
+
+        for f in [temp_prot, temp_cds_in, temp_aln, temp_codon_aln]:
+            if os.path.exists(f):
+                os.remove(f)
+
+    if results:
+        df_res = pd.DataFrame(results)
+        out_file = os.path.join(outdir, f"{prefix}kaks_results_{hog_type}.tsv")
+        df_res.to_csv(out_file, sep='\t', index=False)
+        print(f"[INFO] Saved Ka/Ks results to: {out_file}")
+
+        if HAS_MATPLOTLIB:
+            plt.figure(figsize=(8, 6))
+            sns.histplot(df_res['Ka_Ks_Ratio'].dropna(), kde=True)
+            plt.title(f"Distribution of Ka/Ks Ratios ({hog_type})")
+            plt.xlabel("Ka/Ks Ratio")
+            plt.savefig(os.path.join(outdir, f"{prefix}kaks_dist_{hog_type}.png"))
+            plt.close()
+    else:
+        print("[WARNING] No Ka/Ks results generated.")
+
+##################################################
+# Phylogeny and LCA Analysis
+##################################################
+
+def find_lca(tree, species_list):
+    """
+    Find the Lowest Common Ancestor (LCA) of a list of species in a given tree.
+    """
+    if not species_list:
+        return None
+
+    terminals = []
+    for sp in species_list:
+        matches = tree.find_elements(name=sp)
+        try:
+            node = next(matches)
+            terminals.append(node)
+        except StopIteration:
+            pass
+
+    if not terminals:
+        return None
+
+    if len(terminals) == 1:
+        return terminals[0]
+
+    try:
+        lca = tree.common_ancestor(terminals)
+        return lca
+    except Exception as e:
+        print(f"[WARNING] Could not calculate LCA: {e}")
+        return None
+
+def analyze_phylogeny(ddHOGs, dSpecies, species_tree_file, outdir, prefix):
+    """
+    Analyze the phylogenetic distribution of HOGs using the species tree.
+    """
+    if not HAS_BIOPYTHON:
+        print("[ERROR] Biopython is required for Phylogenetic Analysis. Skipping.")
+        return
+
+    print(f"\n[INFO] Starting Phylogenetic LCA Analysis using {species_tree_file}...")
+
+    try:
+        tree = Phylo.read(species_tree_file, "newick")
+    except Exception as e:
+        print(f"[ERROR] Failed to read species tree {species_tree_file}: {e}")
+        return
+
+    lca_results = []
+
+    for hog_id, hog_obj in ddHOGs.items():
+        present_species = []
+        for sp in hog_obj.members:
+            glist = hog_obj.members[sp].get('', "")
+            if glist.strip():
+                present_species.append(sp)
+
+        if not present_species:
+            continue
+
+        lca = find_lca(tree, present_species)
+
+        lca_name = "Unknown"
+        if lca:
+            lca_name = lca.name if lca.name else "Node"
+            if not lca.name:
+                lca_name = f"Internal_Node_{id(lca)}"
+
+        lca_results.append({
+            "HOG": hog_id,
+            "Num_Species": len(present_species),
+            "LCA_Node": lca_name,
+            "Species_List": ",".join(present_species)
+        })
+
+    if lca_results:
+        df = pd.DataFrame(lca_results)
+        out_file = os.path.join(outdir, f"{prefix}hog_lca_analysis.tsv")
+        df.to_csv(out_file, sep='\t', index=False)
+        print(f"[INFO] Saved LCA analysis to: {out_file}")
+
+        lca_counts = df['LCA_Node'].value_counts()
+        print("\nHOGs per Ancestral Node:")
+        print(lca_counts)
+    else:
+        print("[WARNING] No LCA results generated.")
+
+##################################################
+# Supermatrix Generation
+##################################################
+
+def generate_supermatrix(dGeneNumbers, ddHOGs, dSpecies, cds_dir, fasta_dir, outdir, prefix,
+                         aligner="mafft", backtrans="naive",
+                         mafft_path="mafft", muscle_path="muscle", pal2nal_path="pal2nal.pl"):
+    """
+    Generate a supermatrix from single-copy orthologs.
+    """
+    if not HAS_BIOPYTHON:
+        print("[ERROR] Biopython is required for Supermatrix Generation. Skipping.")
+        return
+
+    import shutil
+
+    print("\n=== Starting Supermatrix Generation ===")
+
+    total_species = len(dSpecies)
+    sco_hogs = []
+
+    for hog_id, counts in dGeneNumbers.items():
+        if counts.count(1) == total_species and sum(counts) == total_species:
+            sco_hogs.append(hog_id)
+
+    print(f"Found {len(sco_hogs)} Single-Copy Orthologs (SCOs).")
+    if not sco_hogs:
+        print("[WARNING] No SCOs found. Cannot generate supermatrix.")
+        return
+
+    cds_seqs = load_cds_sequences(cds_dir)
+    prot_seqs = load_all_sequences(fasta_dir)
+
+    if not cds_seqs or not prot_seqs:
+        print("[ERROR] Missing sequences.")
+        return
+
+    sm_dir = os.path.join(outdir, "supermatrix_temp")
+    os.makedirs(sm_dir, exist_ok=True)
+
+    concatenated_seqs = defaultdict(str)
+    partitions = []
+    current_pos = 1
+    valid_scos = 0
+
+    for i, hog_id in enumerate(sco_hogs):
+        if i % 10 == 0:
+            print(f"Processing SCO {i+1}/{len(sco_hogs)}: {hog_id}")
+
+        hog_obj = ddHOGs[hog_id]
+
+        sp_gene_map = {}
+        for sp in hog_obj.members:
+            glist = hog_obj.members[sp].get('', "")
+            if glist:
+                sp_gene_map[sp] = glist.strip()
+
+        if not all(g in cds_seqs and g in prot_seqs for g in sp_gene_map.values()):
+            continue
+
+        temp_prot = os.path.join(sm_dir, f"temp_{hog_id}.faa")
+        temp_cds_in = os.path.join(sm_dir, f"temp_{hog_id}.cds")
+
+        with open(temp_prot, "w") as f_p, open(temp_cds_in, "w") as f_c:
+            for sp, g in sp_gene_map.items():
+                f_p.write(f">{g}\n{prot_seqs[g]}\n")
+                f_c.write(f">{g}\n{cds_seqs[g]}\n")
+
+        temp_aln = os.path.join(sm_dir, f"temp_{hog_id}.aln")
+        if not run_alignment(temp_prot, temp_aln, aligner, mafft_path, muscle_path):
+            continue
+
+        temp_codon_aln = os.path.join(sm_dir, f"temp_{hog_id}.codon.aln")
+        success_bt = False
+        if backtrans == "pal2nal":
+            success_bt = run_pal2nal(temp_aln, temp_cds_in, temp_codon_aln, pal2nal_path)
+            if not success_bt:
+                success_bt = naive_back_translation(temp_aln, cds_seqs, temp_codon_aln)
+        else:
+            success_bt = naive_back_translation(temp_aln, cds_seqs, temp_codon_aln)
+
+        if not success_bt:
+            continue
+
+        try:
+            aln = AlignIO.read(temp_codon_aln, "fasta")
+            gene_seq_map = {r.id: str(r.seq) for r in aln}
+            aln_len = len(aln[0].seq)
+
+            for sp in dSpecies.values():
+                g = sp_gene_map.get(sp)
+                if g and g in gene_seq_map:
+                    concatenated_seqs[sp] += gene_seq_map[g]
+                else:
+                    concatenated_seqs[sp] += "-" * aln_len
+
+            end_pos = current_pos + aln_len - 1
+            partitions.append(f"DNA, {hog_id} = {current_pos}-{end_pos}")
+            current_pos = end_pos + 1
+            valid_scos += 1
+        except Exception:
+            continue
+
+    if valid_scos > 0:
+        out_sm = os.path.join(outdir, f"{prefix}supermatrix.fasta")
+        with open(out_sm, "w") as f:
+            for sp in sorted(dSpecies.values()):
+                f.write(f">{sp}\n{concatenated_seqs[sp]}\n")
+
+        out_part = os.path.join(outdir, f"{prefix}supermatrix_partitions.txt")
+        with open(out_part, "w") as f:
+            for p in partitions:
+                f.write(f"{p}\n")
+
+        print(f"[INFO] Supermatrix generated with {valid_scos} SCOs.")
+        print(f"       Alignment: {out_sm}")
+        print(f"       Partitions: {out_part}")
+    else:
+        print("[WARNING] Failed to generate supermatrix.")
+
+    shutil.rmtree(sm_dir, ignore_errors=True)
+
+##################################################
 # Main function
 ##################################################
 
 def main():
+    if not HAS_BIOPYTHON:
+        print("\n[WARNING] Biopython is not installed.")
+        print("Advanced features (Ka/Ks, Phylogeny, Supermatrix) will be DISABLED.")
+        print("To enable them, install Biopython: pip install biopython")
+
     parser = argparse.ArgumentParser(
         description="Phylogeny-Aware Pangenome Classification Toolkit (PanHOG)"
     )
-    
+
     parser.add_argument("--config", type=str, default="config.yaml",
                         help="Path to YAML configuration file (default: config.yaml)")
-    
+
     # Main options
     parser.add_argument("--pan", action="store_true",
                         help="Run overall (global) pangenome classification (default if --clade not provided).")
@@ -610,11 +1367,11 @@ def main():
     parser.add_argument("--proteome", type=str, nargs='?', const='ALL', default=None,
                         help="Build a pan-proteome of specified species (comma-separated). If omitted, includes all final species.")
     parser.add_argument("--genevar", type=str, nargs='?', const='ALL', default=None,
-                        help="Plot a heatmap of gene variation. If omitted, includes all final species. Otherwise, specify comma-separated species.")
+                        help="Plot a heatmap of gene variation. If omitted, includes all final species.")
     parser.add_argument("--saturation", action="store_true",
-                        help="Perform bootstrapped saturation analysis (core vs shell+private) in incremental steps.")
+                        help="Perform bootstrapped saturation analysis (core vs shell+private).")
     parser.add_argument("--saturation-cladepair", action="store_true",
-                        help="Perform saturation analysis for two defined clades and plot them in one figure.")
+                        help="Perform saturation analysis for two defined clades.")
     parser.add_argument("-b", "--bootstrap", type=int, default=100,
                         help="Number of random combinations for saturation analysis (default=100).")
     parser.add_argument("--marker-core", default='o',
@@ -623,26 +1380,18 @@ def main():
                         help="Marker shape for Shell+Private line in saturation analysis (default: 'o').")
     parser.add_argument("--clade1", type=str,
                         default="Arabis_alpina,ET_AA21_2,ET_AA6,ET_AA7,ET_AA14,ET_AA23,ET_AA22",
-                        help="Comma-separated list of species for clade1 (default provided).")
+                        help="Comma-separated list of species for clade1.")
     parser.add_argument("--clade2", type=str,
                         default="Col_PEK,ET108_1,ET131_2,ET133_2,ET148_10,ET33_1,ET49_2,ET53_7,ET3_1,ET96_1,ET105_1,ET173_3,ET150_1",
-                        help="Comma-separated list of species for clade2 (default provided).")
-    parser.add_argument("--marker-core-clade1", default='^',
-                        help="Marker shape for Clade1 Core line (default: '^').")
-    parser.add_argument("--marker-pan-clade1", default='^',
-                        help="Marker shape for Clade1 Pan line (default: '^').")
-    parser.add_argument("--marker-core-clade2", default='s',
-                        help="Marker shape for Clade2 Core line (default: 's').")
-    parser.add_argument("--marker-pan-clade2", default='s',
-                        help="Marker shape for Clade2 Pan line (default: 's').")
-    parser.add_argument("--color-core-clade1", default='#c0392b',
-                        help="Color for Clade1 Core line (default: '#c0392b').")
-    parser.add_argument("--color-pan-clade1", default='#f1c40f',
-                        help="Color for Clade1 Pan line (default: '#f1c40f').")
-    parser.add_argument("--color-core-clade2", default='#c0392b',
-                        help="Color for Clade2 Core line (default: '#c0392b').")
-    parser.add_argument("--color-pan-clade2", default='#3498db',
-                        help="Color for Clade2 Pan line (default: '#3498db').")
+                        help="Comma-separated list of species for clade2.")
+    parser.add_argument("--marker-core-clade1", default='^')
+    parser.add_argument("--marker-pan-clade1", default='^')
+    parser.add_argument("--marker-core-clade2", default='s')
+    parser.add_argument("--marker-pan-clade2", default='s')
+    parser.add_argument("--color-core-clade1", default='#c0392b')
+    parser.add_argument("--color-pan-clade1", default='#f1c40f')
+    parser.add_argument("--color-core-clade2", default='#c0392b')
+    parser.add_argument("--color-pan-clade2", default='#3498db')
     parser.add_argument("--pav", action="store_true",
                         help="Generate Presence/Absence Variant (PAV) TSV file.")
     parser.add_argument("--matrix", action="store_true",
@@ -650,23 +1399,61 @@ def main():
     parser.add_argument("--hog", help="Path to HOGs TSV file (e.g. N0.tsv)")
     parser.add_argument("--fasta", help="Directory containing FASTA files")
     parser.add_argument("--funano", type=int, default=0, choices=[0,1,2,3,4,5,6],
-                        help="Perform functional annotation of pangenome compartments against UniProt database. "
-                             "Options: 0=disabled, 1=all compartments, 2=core only, 3=single-copy only, "
-                             "4=shell only, 5=genotype-specific (private) only, 6=cloud only")
+                        help="Functional annotation: 0=disabled, 1=all, 2=core, 3=single-copy, 4=shell, 5=private, 6=cloud")
     parser.add_argument("--uniprot-db", type=str, default=None,
-                        help="Path to UniProt database (if not provided, will be downloaded automatically)")
+                        help="Path to UniProt database (if not provided, will be downloaded)")
     parser.add_argument("--threads", type=int, default=8,
                         help="Number of threads for BLASTP (default: 8)")
     parser.add_argument("--keep-uniprot", action="store_true",
-                        help="Keep the downloaded UniProt database after annotation (default: delete after use)")
+                        help="Keep the downloaded UniProt database after annotation")
     parser.add_argument("-o", "--output", type=str, default=".",
-                        help="Output directory to write files (default: current directory)")
+                        help="Output directory (default: current directory)")
     parser.add_argument("-p", "--prefix", type=str, default="",
-                        help="Prefix to add to output file names (default: none)")
+                        help="Prefix for output file names (default: none)")
     parser.add_argument("--zscore", action="store_true",
-                        help="Apply z-score normalization for gene variation heatmap (used with --genevar)")
+                        help="Apply z-score normalization for gene variation heatmap")
     parser.add_argument("--log", action="store_true",
-                        help="Apply log2(count+1) transformation for gene variation heatmap (used with --genevar)")
+                        help="Apply log2(count+1) transformation for gene variation heatmap")
+
+    # Summary Statistics
+    parser.add_argument("--summary", action="store_true",
+                        help="Generate summary statistics and stacked bar charts for HOGs/Genes.")
+
+    # Random HOG Matrix
+    parser.add_argument("--random-hog-matrix", type=int, default=None, nargs='?', const=1000,
+                        help="Generate a matrix plot for N random HOGs (default: 1000).")
+
+    # Ka/Ks options
+    parser.add_argument("--kaks", action="store_true",
+                        help="Run Ka/Ks calculation pipeline.")
+    parser.add_argument("--cds", type=str, default=None,
+                        help="Directory containing CDS FASTA files. Required for --kaks and --supermatrix.")
+    parser.add_argument("--kaks-type", type=str, default="core", choices=["core", "shell", "private", "all"],
+                        help="Type of HOGs for Ka/Ks (default: core).")
+    parser.add_argument("--kaks-method", type=str, default="biopython", choices=["biopython", "kakscalculator"],
+                        help="Method for Ka/Ks calculation (default: biopython).")
+
+    # Phylogeny options
+    parser.add_argument("--species-tree", type=str, default=None,
+                        help="Species tree file (Newick format) for LCA analysis.")
+    parser.add_argument("--supermatrix", action="store_true",
+                        help="Generate supermatrix from single-copy orthologs.")
+
+    # Advanced options
+    parser.add_argument("--aligner", type=str, default="mafft", choices=["mafft", "muscle"],
+                        help="Protein alignment tool (default: mafft).")
+    parser.add_argument("--backtrans", type=str, default="naive", choices=["naive", "pal2nal"],
+                        help="Back-translation method (default: naive).")
+    parser.add_argument("--reference", type=str, default=None,
+                        help="Reference species for pairwise Ka/Ks calculation.")
+
+    # External Tool Paths
+    parser.add_argument("--mafft-path", type=str, default="mafft")
+    parser.add_argument("--muscle-path", type=str, default="muscle")
+    parser.add_argument("--pal2nal-path", type=str, default="pal2nal.pl")
+    parser.add_argument("--kakscalculator-path", type=str, default="KaKs_Calculator")
+    parser.add_argument("--blastp-path", type=str, default="blastp")
+    parser.add_argument("--makeblastdb-path", type=str, default="makeblastdb")
 
     args = parser.parse_args()
     config = load_config(args.config)
@@ -675,10 +1462,10 @@ def main():
             args.hog = config['hog_file']
         if 'fasta_dir' in config and args.fasta is None:
             args.fasta = config['fasta_dir']
-    
+
     if args.hog is None or args.fasta is None:
         parser.error("The following arguments are required: --hog, --fasta (or provide them in config file)")
-    
+
     args = merge_config_with_args(config, args)
     os.makedirs(args.output, exist_ok=True)
     results_dir = os.path.join(args.output, "results")
@@ -688,7 +1475,7 @@ def main():
     temp_dir = os.path.join(args.output, "temp")
     for directory in [results_dir, anno_dir, blast_dir, peptides_dir, temp_dir]:
         os.makedirs(directory, exist_ok=True)
-    
+
     print(f"[INFO] Results will be saved in: {os.path.abspath(results_dir)}")
 
     if not args.pan and not args.clade:
@@ -776,7 +1563,7 @@ def main():
         'shell': shellHOGs,
         'gt-specific': gtHOGs
     }
-    
+
     for htype, hog_dict in hog_files.items():
         out_file = os.path.join(panhog_classification_dir, f"{prefix}{htype}.HOGs.tsv")
         with open(out_file, 'w') as fout:
@@ -821,6 +1608,35 @@ def main():
         plot_genevar_heatmap(dGeneNumbers, dSpecies, coreHOGs, shellHOGs, gtHOGs,
                              outdir, prefix, gfilt, transformation)
 
+    if args.summary:
+        stats_df = generate_summary_stats(dGeneNumbers, ddHOGs, dSpecies, outdir, prefix)
+        plot_summary_stats(stats_df, outdir, prefix)
+
+    if args.random_hog_matrix is not None:
+        generate_random_hog_matrix(dGeneNumbers, dSpecies, outdir, prefix, n_hogs=args.random_hog_matrix)
+
+    if args.kaks:
+        if args.cds is None:
+            print("[ERROR] --cds argument is required for Ka/Ks calculation.")
+        else:
+            run_kaks_pipeline(args.kaks_type, args.kaks_method, args.cds, args.fasta,
+                              dGeneNumbers, ddHOGs, dSpecies, args.output, args.prefix,
+                              args.aligner, args.backtrans, args.reference,
+                              args.mafft_path, args.muscle_path, args.pal2nal_path,
+                              args.kakscalculator_path)
+
+    if args.species_tree:
+        analyze_phylogeny(ddHOGs, dSpecies, args.species_tree, outdir, prefix)
+
+    if args.supermatrix:
+        if args.cds is None:
+            print("[ERROR] --cds argument is required for supermatrix generation.")
+        else:
+            generate_supermatrix(dGeneNumbers, ddHOGs, dSpecies, args.cds, fasta_dir, outdir, prefix,
+                                 aligner=args.aligner, backtrans=args.backtrans,
+                                 mafft_path=args.mafft_path, muscle_path=args.muscle_path,
+                                 pal2nal_path=args.pal2nal_path)
+
     if args.saturation:
         run_saturation_analysis(ddHOGs, final_species_list, outdir, prefix,
                                 bootstrap=args.bootstrap,
@@ -840,18 +1656,18 @@ def main():
                                         color_pan_clade1=args.color_pan_clade1,
                                         color_core_clade2=args.color_core_clade2,
                                         color_pan_clade2=args.color_pan_clade2)
-    
+
     if args.funano > 0:
         import tempfile
         import gzip
         import shutil
         print("\n=== Starting functional annotation of pangenome compartments ===")
         try:
-            subprocess.run(["which", "makeblastdb"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            subprocess.run(["which", "blastp"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        except subprocess.CalledProcessError:
-            print("[ERROR] BLAST+ tools (makeblastdb and blastp) are required for functional annotation.")
-            print("Please install BLAST+ from: https://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE_TYPE=BlastDocs&DOC_TYPE=Download")
+            subprocess.run([args.makeblastdb_path, "-version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run([args.blastp_path, "-version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print(f"[ERROR] BLAST+ tools not found at '{args.makeblastdb_path}' or '{args.blastp_path}'.")
+            print("Please install BLAST+ or specify correct paths using --makeblastdb-path and --blastp-path.")
             sys.exit(1)
         selected_compartments = get_selected_compartments(args.funano)
         if not selected_compartments:
@@ -879,7 +1695,7 @@ def main():
             if not os.path.exists(f"{uniprot_db}.phr"):
                 print("Creating BLAST database...")
                 try:
-                    subprocess.run(["makeblastdb", "-in", uniprot_db, "-dbtype", "prot"], check=True)
+                    subprocess.run([args.makeblastdb_path, "-in", uniprot_db, "-dbtype", "prot"], check=True)
                 except subprocess.CalledProcessError as e:
                     print(f"[ERROR] Failed to create BLAST database: {e}")
                     sys.exit(1)
@@ -902,13 +1718,13 @@ def main():
                 print(f"\n=== Processing {comp_name} compartment ===")
                 gene_ids = set()
                 with open(comp_file, 'r') as f:
-                    next(f)  # Skip header
+                    next(f)
                     for line in f:
                         parts = line.strip().split('\t')
-                        for gene_list in parts[1:]:  # First column is HOG ID, rest are gene lists
+                        for gene_list in parts[1:]:
                             for gene_id in gene_list.split(','):
                                 gene_id = gene_id.strip()
-                                if gene_id:  # Skip empty entries
+                                if gene_id:
                                     gene_ids.add(gene_id)
                 if not gene_ids:
                     print(f"No genes found in {comp_name} compartment. Skipping...")
@@ -933,10 +1749,11 @@ def main():
                 print(f"Running BLASTP for {comp_name} compartment...")
                 blast_output = os.path.join(blast_dir, f"{prefix}{comp_name}_uniprot_blast.xml")
                 blast_cline = NcbiblastpCommandline(
+                    cmd=args.blastp_path,
                     query=comp_fasta,
                     db=uniprot_db,
                     out=blast_output,
-                    outfmt=5,  # XML format
+                    outfmt=5,
                     evalue=1e-5,
                     num_threads=args.threads,
                     max_target_seqs=1
@@ -964,7 +1781,7 @@ def main():
                     print(f"Annotation report for {comp_name} compartment saved to {annotation_file}")
                 except Exception as e:
                     print(f"[ERROR] Failed to run BLASTP for {comp_name} compartment: {e}")
-        
+
             readme_path = os.path.join(results_dir, "README.md")
             with open(readme_path, 'w', encoding='utf-8') as f:
                 f.write("# PanHOG Functional Annotation Results\n\n")

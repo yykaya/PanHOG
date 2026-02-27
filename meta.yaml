@@ -1,0 +1,53 @@
+{% set name = "panhog" %}
+{% set version = "0.2.0" %}
+
+package:
+  name: {{ name }}
+  version: {{ version }}
+
+source:
+  url: https://github.com/yykaya/PanHOG/archive/v{{ version }}.tar.gz
+
+build:
+  number: 0
+  noarch: python
+  script: python -m pip install . --no-deps --no-build-isolation -vvv
+  entry_points:
+    - panhog = PanHOG:main
+    - pangenehog = PangeneHOG:main
+
+requirements:
+  host:
+    - python >=3.8
+    - pip
+    - setuptools
+  run:
+    - python >=3.8
+    - numpy
+    - pandas
+    - matplotlib-base
+    - seaborn
+    - biopython
+    - pyyaml
+    - blast
+
+test:
+  commands:
+    - panhog --help
+
+about:
+  home: https://github.com/yykaya/PanHOG
+  license: MIT
+  license_family: MIT
+  license_file: LICENSE
+  summary: Phylogeny-Aware Pangenome Classification Toolkit
+  description: |
+    PanHOG is a phylogeny-aware toolkit for classifying and annotating
+    Hierarchical Orthologous Groups (HOGs) in pangenomic datasets. It provides
+    pangenome classification, Ka/Ks analysis, phylogenetic LCA analysis,
+    supermatrix generation, and publication-quality visualizations.
+  dev_url: https://github.com/yykaya/PanHOG
+
+extra:
+  recipe-maintainers:
+    - yykaya

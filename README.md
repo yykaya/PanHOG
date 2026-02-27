@@ -6,14 +6,37 @@
   <img src="panhog.png" alt="PanHOG logo" width="480"/>
 </td>
 <td>
-A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologous Groups (HOGs) in pangenomic datasets. It's a flexible command-line toolkit for classifying HOGs across multiple genomes in a pangenome-aware, phylogeny-informed context. It supports core/shell/private gene classification, heatmap visualization, pan-proteome generation, functional annotation and saturation analysis. Now supports both command-line arguments and external configuration files.
+A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologous Groups (HOGs) in pangenomic datasets. It's a flexible command-line toolkit for classifying HOGs across multiple genomes in a pangenome-aware, phylogeny-informed context. It supports core/shell/private gene classification, heatmap visualization, pan-proteome generation, functional annotation, saturation analysis, Ka/Ks selection analysis, phylogenetic LCA analysis, and supermatrix generation. Now supports both command-line arguments and external configuration files.
 </td>
 </tr>
 </table>
 ---
 
 
-## 📢 Changelog
+## Changelog
+
+### [v0.2.0] - 2026-02-27
+
+#### New Features
+
+- **Summary Statistics (`--summary`)**: Generates a summary statistics table and stacked bar chart showing Gene/HOG ratios across pangenome compartments (core, single-copy, shell, private, cloud).
+- **Random HOG Matrix (`--random-hog-matrix N`)**: Generates an absent/single/multi-copy heatmap for N randomly sampled HOGs across all species.
+- **Ka/Ks Analysis (`--kaks`)**: Performs codon-based selection analysis (dN/dS) on orthologous groups using the Nei-Gojobori (1986) method.
+  - Supports core, shell, private, or all HOG types via `--kaks-type`.
+  - Calculation methods: `biopython` (built-in) or `kakscalculator` (external).
+  - Aligners: `mafft` or `muscle` via `--aligner`.
+  - Back-translation: `naive` (built-in) or `pal2nal` (external) via `--backtrans`.
+  - Optional pairwise mode with `--reference` species.
+- **Phylogenetic LCA Analysis (`--species-tree`)**: Maps HOGs to their Lowest Common Ancestor on a species tree, generating per-node HOG counts and a phylogeny-aware classification.
+- **Supermatrix Generation (`--supermatrix`)**: Concatenates aligned single-copy orthologs into a supermatrix for phylogenomic inference, with partition file for RAxML/IQ-TREE.
+- **Configurable Tool Paths**: Added `--mafft-path`, `--muscle-path`, `--pal2nal-path`, `--blastp-path`, `--makeblastdb-path`, `--kakscalculator-path` for HPC/custom installations.
+
+#### Improvements
+
+- **Graceful Dependency Handling**: Optional dependencies (PyYAML, BioPython, matplotlib/seaborn) are now handled with try/except, providing clear error messages when missing.
+- **Extended FASTA Support**: Now recognizes `.pep.fa` and uppercase extensions (`.FASTA`, `.FA`, `.PEP`).
+- **Conda Packaging**: Added `conda-recipe/meta.yaml`, `environment.yml`, and updated `setup.py` for single-command install via conda or pip.
+- **Updated Config Examples**: Example YAML config files now include all new analysis options.
 
 ### [Released] - 2025-09-21
 
@@ -33,30 +56,123 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 - **Organized Classification**: Pangenome classification files (`core.HOGs.tsv`, etc.) are now neatly stored in `results/compartments/panhog_classification/`.
 - **Improved Cloud Gene File**: The `cloud.unassigned_genes.tsv` file now correctly includes a header.
 
+---
+
 ## Key Features
 
-* **Global Pangenome Classification (`--pan`)**
-* **Clade-Specific Analysis (`--clade species1,species2`)**
-* **Pan-Proteome Construction (`--proteome`)**
-* **Gene Variation Heatmap (`--genevar`)**
-* **Bootstrapped Saturation Analysis (`--saturation`)**
-* **Clade-based Saturation Analysis (`--saturation-cladepair`)**
-* **HOG-based Functional Annotation (`--funano`)**
-* **Customizable via Config File (`--config config.yaml`)**
-* **Pangene Integration for Gene Presence/Absence Analysis**
+| Feature | Flag | Description |
+|---|---|---|
+| Global Pangenome Classification | `--pan` | Classify HOGs into core, single-copy, shell, private, and cloud |
+| Clade-Specific Analysis | `--clade sp1,sp2,...` | Pangenome classification on a subset of species |
+| Pan-Proteome Construction | `--proteome` | Extract FASTA sequences for pangenome compartments |
+| Gene Variation Heatmap | `--genevar` | Heatmap of gene copy number variation across species |
+| Saturation Analysis | `--saturation` | Bootstrapped core/pan-genome growth curves |
+| Clade-pair Saturation | `--saturation-cladepair` | Compare saturation between two clades |
+| Summary Statistics | `--summary` | Summary table and stacked bar chart |
+| Random HOG Matrix | `--random-hog-matrix N` | Heatmap of N randomly sampled HOGs |
+| PAV Matrix | `--pav` | Presence/Absence Variant matrix |
+| Count Matrix | `--matrix` | Gene copy number matrix |
+| Functional Annotation | `--funano` | BLAST-based annotation against UniProt |
+| Ka/Ks Analysis | `--kaks` | Selection analysis on orthologous groups |
+| Phylogenetic LCA | `--species-tree` | Map HOGs to species tree nodes |
+| Supermatrix | `--supermatrix` | Concatenated single-copy orthologs for phylogenomics |
+| Config File | `--config` | YAML-based configuration |
+
+---
+
+## Installation
+
+### Option 1: Conda (Recommended)
+
+```bash
+# Create environment with all dependencies
+conda env create -f environment.yml
+conda activate panhog
+
+# Install PanHOG
+pip install .
+```
+
+### Option 2: Pip
+
+```bash
+pip install panhog
+```
+
+### Option 3: From Source
+
+```bash
+git clone https://github.com/yykaya/PanHOG.git
+cd PanHOG
+pip install -e .
+```
+
+After installation, the `panhog` and `pangenehog` commands are available system-wide.
 
 ---
 
 ## Documentation
-- [Install dependencies](Installation.md)
 - [Configuration Guide](README_config.md) - Detailed guide for configuring PanHOG with YAML files
 - [Pangene Integration Guide](README_pangene.md) - Instructions for using the pangene integration module
 
+---
 
+## Quick Start
 
-## ⚙️ Command-Line Options
+### Basic pangenome classification
 
-PanHOG offers a wide range of options to customize your analysis. Here is a detailed breakdown:
+```bash
+panhog --hog N0.tsv --fasta ./peptides/ --pan -o results/ -p run1_
+```
+
+### Full pipeline with all analyses
+
+```bash
+panhog --hog N0.tsv --fasta ./peptides/ --pan \
+  --proteome ALL --genevar ALL --saturation \
+  --pav --matrix --summary --random-hog-matrix 1000 \
+  -o results/ -p full_
+```
+
+### Ka/Ks selection analysis
+
+```bash
+panhog --hog N0.tsv --fasta ./peptides/ --pan \
+  --kaks --cds ./cds_fasta/ --kaks-type core \
+  --aligner mafft --backtrans naive \
+  -o results/ -p kaks_
+```
+
+### Phylogenetic LCA analysis
+
+```bash
+panhog --hog N0.tsv --fasta ./peptides/ --pan \
+  --species-tree species_tree.nwk \
+  -o results/ -p phylo_
+```
+
+### With YAML config file
+
+```bash
+panhog --hog N0.tsv --fasta ./peptides/ --config config.yaml
+```
+
+### Clade-specific analysis
+
+```bash
+panhog --hog N0.tsv --fasta ./peptides/ \
+  --clade species1,species2,species3 -o results/ -p cladeA_
+```
+
+### Pangene annotation pipeline
+
+```bash
+pangenehog --hog N0.tsv --fasta ./peptides/ --pan -o results/
+```
+
+---
+
+## Command-Line Options
 
 ### Main Arguments
 
@@ -74,6 +190,33 @@ PanHOG offers a wide range of options to customize your analysis. Here is a deta
 |---|---|---|
 | `--pan` | Performs a global pangenome classification across all species. | Enabled if `--clade` is not used. |
 | `--clade` | Performs a pangenome classification on a specific subset of species. Provide a comma-separated list. | `None` |
+
+### New Analyses (v0.2.0)
+
+| Argument | Description | Default |
+|---|---|---|
+| `--summary` | Generate summary statistics table and stacked bar chart. | `False` |
+| `--random-hog-matrix` | Generate random HOG matrix heatmap with N HOGs. | `None` |
+| `--kaks` | Perform Ka/Ks (dN/dS) selection analysis. | `False` |
+| `--cds` | Path to directory containing CDS FASTA files (required for `--kaks`). | `None` |
+| `--kaks-type` | HOG type for Ka/Ks analysis: `core`, `shell`, `private`, `all`. | `core` |
+| `--kaks-method` | Ka/Ks calculation method: `biopython` or `kakscalculator`. | `biopython` |
+| `--aligner` | Protein alignment tool: `mafft` or `muscle`. | `mafft` |
+| `--backtrans` | Back-translation method: `naive` (built-in) or `pal2nal`. | `naive` |
+| `--reference` | Reference species for pairwise Ka/Ks analysis. | `None` |
+| `--species-tree` | Path to Newick species tree for phylogenetic LCA analysis. | `None` |
+| `--supermatrix` | Generate supermatrix from single-copy orthologs. | `False` |
+
+### Tool Paths
+
+| Argument | Description | Default |
+|---|---|---|
+| `--mafft-path` | Path to MAFFT executable. | `mafft` |
+| `--muscle-path` | Path to MUSCLE executable. | `muscle` |
+| `--pal2nal-path` | Path to PAL2NAL script. | `pal2nal.pl` |
+| `--blastp-path` | Path to BLASTP executable. | `blastp` |
+| `--makeblastdb-path` | Path to makeblastdb executable. | `makeblastdb` |
+| `--kakscalculator-path` | Path to KaKs_Calculator executable. | `KaKs_Calculator` |
 
 ### Functional Annotation
 
@@ -112,69 +255,48 @@ PanHOG offers a wide range of options to customize your analysis. Here is a deta
 
 ---
 
+## Configuration File
 
----
-
-## Basic Usage
-
-```bash
-python PanHOG.py --hog N0.tsv --fasta ./peptides/ --funano 0 --pan -o results/ -p run1_
-#without functional annotation option (--funano 0)
-```
-
-
-```bash
-python PanHOG.py --hog N0.tsv --fasta ./peptides/ --funano 5 --pan -o results/ -p run1_
-#with functional annotation option for private HOGs (--funano 5)
-```
-
-### With clade-specific analysis:
-
-```bash
-python PanHOG.py --hog N0.tsv --fasta ./peptides/ \
-  --clade Arabis_alpina,ET_AA21_2,ET_AA6 --pan -o results/ -p cladeA_
-```
-
-### With pan-proteome and gene variation heatmap:
-
-```bash
-python PanHOG.py --hog N0.tsv --fasta ./peptides/ \
-  --proteome ALL --genevar ALL --zscore -o results/ -p viz_
-```
-
----
-
-## ⚙️ Configuration File
-
-You can now use a YAML config file to set advanced parameters like colors, markers, labels, and clade definitions.
+You can use a YAML config file to set advanced parameters like colors, markers, labels, and clade definitions.
 
 ### Sample `config.yaml`
 
 ```yaml
+# Input files
+hog: "N0.tsv"
+fasta: "/path/to/peptide/fasta"
+
+# Output settings
+output: "./results"
+prefix: "my_analysis_"
+
+# Analysis options
+pan: true
+summary: true
+random_hog_matrix: 1000
 bootstrap: 10000
-marker_core_clade1: "^"
-marker_core_clade2: "s"
-marker_pan_clade1: "^"
-marker_pan_clade2: "s"
-color_core_clade1: "#c0392b"
-color_pan_clade1: "#f1c40f"
-color_core_clade2: "#c0392b"
-color_pan_clade2: "#3498db"
-clade1:
-  - Arabis_alpina
-  - AA1
-  - AA2
-....
-clade2:
-  - Col_PEK
-  - Col-CEN
-....
+
+# Ka/Ks analysis
+# kaks: true
+# cds: "/path/to/cds/fasta"
+# kaks_type: "core"
+# aligner: "mafft"
+
+# Phylogeny LCA
+# species_tree: "species_tree.nwk"
+
+# Supermatrix
+# supermatrix: true
+
+# Saturation plot customization
+marker_core: "o"
+marker_pan: "s"
 ```
 
 ### Run using config:
 
 ```bash
-python PanHOG.py --hog N0.tsv --fasta ./peptides/ --saturation-cladepair --config config.yaml
+panhog --hog N0.tsv --fasta ./peptides/ --config config.yaml
 ```
 
 > Any command-line flag will **override** the corresponding config value.
@@ -187,17 +309,27 @@ python PanHOG.py --hog N0.tsv --fasta ./peptides/ --saturation-cladepair --confi
 * `cloud.unassigned_genes.tsv`
 * `private_genes_<species>.txt`
 * `pan_proteome.fa`
+* `summary_stats.tsv`, `summary_stats.png` (v0.2.0)
+* `random_hog_matrix.png` (v0.2.0)
+* `pav_matrix.tsv`, `count_matrix.tsv`
 * `genevar_heatmap.[png|pdf|svg]`
-![Gene Variability Heatmap](genevar_heatmap.png)
 * `saturation_analysis.[png|pdf|svg]`
-![Saturation Analysis](Saturation_byClade.png)
+* `kaks_results.tsv` (v0.2.0)
+* `phylogeny_lca_results.tsv` (v0.2.0)
+* `supermatrix.fasta`, `supermatrix_partitions.txt` (v0.2.0)
+
 ---
 
 ## Recommendations
 
+* Use `--summary` for a quick overview of your pangenome composition.
+* Use `--random-hog-matrix 1000` to visualize HOG presence patterns across species.
 * Use `--proteome` to extract FASTA of shared pangenes.
 * Use `--saturation-cladepair` for insight into core/pan genome expansion across defined clades.
 * Use `--genevar` with `--zscore` for population-scale expansions or contractions.
+* Use `--kaks` with `--kaks-type core` to identify genes under selection in the core genome.
+* Use `--species-tree` with a well-supported phylogeny for evolutionary context.
+* Use `--supermatrix` to generate input for phylogenomic tree inference.
 
 ---
 
@@ -207,5 +339,4 @@ This tool is currently in **beta**. For questions, contributions, or citation re
 
 ---
 
-
-Happy pangenomics with **PanHOG**! 🐼
+Happy pangenomics with **PanHOG**!

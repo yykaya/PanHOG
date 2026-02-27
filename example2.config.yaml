@@ -12,13 +12,17 @@ prefix: "my_analysis_"
 
 # Analysis options
 pan: true
-# clade: "species1,species2,species3"  # Uncomment and specify for clade-specific analysis
+# clade: "species1,species2,species3"  # Uncomment for clade-specific analysis
 
 # Optional analyses
 proteome: "ALL"  # Set to "ALL" or specify comma-separated species list
 genevar: "ALL"   # Set to "ALL" or specify comma-separated species list
 saturation: true
 saturation_cladepair: false
+pav: true
+matrix: true
+summary: true
+random_hog_matrix: 1000
 
 # Bootstrap settings
 bootstrap: 100
@@ -46,3 +50,17 @@ color_pan_clade2: "#3498db"
 # Gene variation heatmap transformation
 zscore: false
 log: true
+
+# Ka/Ks analysis (requires CDS FASTA files)
+# kaks: true
+# cds: "path/to/cds_directory"
+# kaks_type: "core"         # core, shell, private, all
+# kaks_method: "biopython"  # biopython or kakscalculator
+# aligner: "mafft"          # mafft or muscle
+# backtrans: "naive"        # naive or pal2nal
+
+# Phylogeny LCA analysis
+# species_tree: "path/to/species_tree.nwk"
+
+# Supermatrix from single-copy orthologs
+# supermatrix: true
