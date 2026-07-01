@@ -7,7 +7,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="panhog",
-    version="0.2.0",
+    version="0.3.0",
     description="Phylogeny-Aware Pangenome Classification Toolkit",
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -15,7 +15,10 @@ setup(
     author="Yasin Kaya",
     author_email="yyasinkkaya@gmail.com",
 
-    py_modules=["PanHOG", "PangeneHOG"],
+    # panhog_dnds is imported by PanHOG at runtime and MUST ship with the
+    # package, otherwise the installed `panhog` console script cannot run
+    # the Ka/Ks (dN/dS) analysis.
+    py_modules=["PanHOG", "PangeneHOG", "panhog_dnds"],
 
     entry_points={
         'console_scripts': [
@@ -29,8 +32,23 @@ setup(
         "pandas",
         "matplotlib",
         "seaborn",
-        "biopython",
+        "biopython>=1.80",
         "pyyaml",
+    ],
+    extras_require={
+        # Enables the YN00 and ML dN/dS substitution models.
+        "full": ["scipy"],
+        # Everything needed to run the test suite.
+        "dev": ["pytest", "scipy"],
+    },
+
+    project_urls={
+        "Source": "https://github.com/yykaya/PanHOG",
+        "Bug Tracker": "https://github.com/yykaya/PanHOG/issues",
+    },
+    keywords=[
+        "bioinformatics", "pangenome", "phylogenetics", "orthology",
+        "HOG", "OrthoFinder", "dN/dS", "KaKs", "comparative genomics",
     ],
 
     classifiers=[
@@ -38,6 +56,10 @@ setup(
         "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering :: Bio-Informatics",
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS :: MacOS X",
         "License :: OSI Approved :: MIT License",

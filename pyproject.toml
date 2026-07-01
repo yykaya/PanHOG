@@ -1,0 +1,16 @@
+# PanHOG uses the classic setup.py for its metadata (see setup.py). This file
+# declares the PEP 517 build backend so `pip install .` works in isolated
+# builds, and configures the test suite. Package metadata is intentionally kept
+# in setup.py to avoid duplication.
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    # Bio.codonalign is flagged experimental by Biopython.
+    "ignore:.*experimental.*:UserWarning",
+]

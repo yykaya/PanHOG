@@ -1,17 +1,27 @@
 name: panhog
 channels:
-  - bioconda
   - conda-forge
+  - bioconda
   - defaults
 dependencies:
-  - python>=3.8
+  - python >=3.8
+  # Python libraries
   - numpy
   - pandas
   - matplotlib
   - seaborn
-  - biopython
+  - biopython >=1.80
   - pyyaml
-  - blast
-  - mafft
+  - scipy            # dN/dS YN00 / ML substitution models
+  # External bioinformatics tools
+  - blast            # functional annotation (blastp / makeblastdb)
+  - mafft            # protein alignment (Ka/Ks, supermatrix)
+  - muscle           # alternative aligner
+  - pal2nal          # codon back-translation (optional)
+  - paml             # codeml engine for --kaks-method codeml
+  # Install PanHOG itself from this checkout.
+  # Run `conda env create -f environment.yml` from the repository root, then the
+  # `panhog` / `pangenehog` commands are available in the environment.
+  - pip
   - pip:
-    - panhog
+    - .

@@ -1,18 +1,23 @@
 {% set name = "panhog" %}
-{% set version = "0.2.0" %}
+{% set version = "0.3.0" %}
 
 package:
   name: {{ name }}
   version: {{ version }}
 
+# Build directly from this checkout so `conda build conda-recipe/` works out of
+# the box. To build a released version instead, comment this out and use the
+# PyPI/GitHub source block below (fill in the matching sha256).
 source:
-  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
-  sha256: 7b97133e854b477c7fd3b0cad233e26d0bd52c97fc9a6f1d7bc6f77992630c1d
+  path: ..
+# source:
+#   url: https://github.com/yykaya/PanHOG/archive/refs/tags/v{{ version }}.tar.gz
+#   sha256: <sha256 of the release tarball>
 
 build:
   number: 0
   noarch: python
-  script: python -m pip install . --no-deps --no-build-isolation -vvv
+  script: {{ PYTHON }} -m pip install . --no-deps --no-build-isolation -vv
   entry_points:
     - panhog = PanHOG:main
     - pangenehog = PangeneHOG:main
@@ -21,20 +26,29 @@ requirements:
   host:
     - python >=3.8
     - pip
-    - setuptools
+    - setuptools >=61
   run:
     - python >=3.8
     - numpy
     - pandas
     - matplotlib-base
     - seaborn
-    - biopython
+    - biopython >=1.80
     - pyyaml
-    - blast
+    - scipy            # dN/dS YN00 / ML substitution models
+    # External bioinformatics tools invoked by PanHOG:
+    - blast            # functional annotation (blastp/makeblastdb)
+    - mafft            # protein alignment for Ka/Ks and supermatrix
+    - muscle           # alternative aligner
+    - pal2nal          # codon back-translation (optional)
+    - paml             # codeml engine for --kaks-method codeml
 
 test:
+  imports:
+    - panhog_dnds
   commands:
     - panhog --help
+    - pangenehog --help
 
 about:
   home: https://github.com/yykaya/PanHOG
@@ -45,8 +59,9 @@ about:
   description: |
     PanHOG is a phylogeny-aware toolkit for classifying and annotating
     Hierarchical Orthologous Groups (HOGs) in pangenomic datasets. It provides
-    pangenome classification, Ka/Ks analysis, phylogenetic LCA analysis,
-    supermatrix generation, and publication-quality visualizations.
+    pangenome classification, codon-based dN/dS (Ka/Ks) selection analysis,
+    phylogenetic LCA analysis, supermatrix generation, functional annotation,
+    and publication-quality visualizations.
   dev_url: https://github.com/yykaya/PanHOG
 
 extra:
