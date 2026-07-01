@@ -26,3 +26,24 @@ htmlcov/
 # PanHOG run outputs
 results/
 *.tmp
+
+# Local validation & run artifacts (not for publication)
+/codeml_test/
+/bp_test/
+/smoke_codeml/
+/full_run/
+/weighted_run/
+/dist_run/
+/validation_data/
+*.log
+UPGRADE_RUN_REPORT.md
+
+# PAML codeml scratch files (written to CWD by codeml)
+rst
+rst1
+rub
+rates
+lnf
+2ML.*
+2NG.*
+4fold.nuc
