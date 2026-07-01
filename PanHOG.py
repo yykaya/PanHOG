@@ -16,13 +16,15 @@ except ImportError:
     HAS_YAML = False
 
 try:
-    from Bio.Blast import NCBIXML
-    from Bio.Blast.Applications import NcbiblastpCommandline
     from Bio import SeqIO, AlignIO, Phylo
     from Bio.Seq import Seq
     from Bio.SeqRecord import SeqRecord
     from Bio.Align import MultipleSeqAlignment
     from Bio.Data import CodonTable
+    # NCBIXML still ships in current Biopython; the old NcbiblastpCommandline
+    # wrapper was removed in Biopython >=1.85, so BLAST is invoked via subprocess
+    # instead (see functional-annotation section) rather than that wrapper.
+    from Bio.Blast import NCBIXML
     HAS_BIOPYTHON = True
 except ImportError:
     HAS_BIOPYTHON = False
@@ -38,6 +40,12 @@ except ImportError:
 
 import numpy as np
 import pandas as pd
+
+try:
+    import panhog_dnds
+    HAS_DNDS = True
+except ImportError:
+    HAS_DNDS = False
 
 ##############################
 # Configuration Loading
@@ -870,100 +878,107 @@ def naive_back_translation(prot_aln_file, cds_seqs, output_codon_aln):
     except Exception:
         return False
 
-def calculate_ng86(aligned_seqs):
+def calculate_ng86(aligned_seqs, model="NG86"):
     """
-    Simplified Nei-Gojobori (1986) method for Ka/Ks.
-    """
-    import itertools
+    Average Ka(dN), Ks(dS) and the dN/dS ratio over all pairs of an aligned
+    codon set, using the validated engine in ``panhog_dnds``.
 
-    n_seqs = len(aligned_seqs)
-    if n_seqs < 2:
+    This replaces an earlier hand-rolled Nei-Gojobori routine that counted
+    synonymous/non-synonymous *sites* with arbitrary constants (and only on
+    differing codons), which produced uninterpretable numbers. The math is now
+    delegated to ``Bio.codonalign.cal_dn_ds`` via ``panhog_dnds.dnds_pair``.
+
+    Returns (avg_dN, avg_dS, avg_dN/dS); components with no defined value are
+    ignored in the average rather than replaced by a fabricated 0.
+    """
+    if len(aligned_seqs) < 2:
         return None, None, None
 
-    table = CodonTable.unambiguous_dna_by_id[1]
-    pairs = list(itertools.combinations(aligned_seqs, 2))
+    records = [(str(i), s) for i, s in enumerate(aligned_seqs)]
+    rows = panhog_dnds.dnds_from_alignment(records, method="biopython", model=model)
+    summary = panhog_dnds.summarize_hog(rows)
+    return summary["dN"], summary["dS"], summary["dN_dS"]
 
-    valid_pairs = 0
-    total_ka = 0
-    total_ks = 0
+def _write_kaks_outputs(pair_rows, summary_rows, hog_type, outdir, prefix):
+    """Write per-HOG summary + per-pair tables and a dN/dS histogram."""
+    if not summary_rows:
+        print("[WARNING] No dN/dS results generated (no HOGs with >=2 usable sequences).")
+        return
+    df_sum = pd.DataFrame(summary_rows)
+    sum_file = os.path.join(outdir, f"{prefix}kaks_results_{hog_type}.tsv")
+    df_sum.to_csv(sum_file, sep='\t', index=False)
+    print(f"[INFO] Saved per-HOG dN/dS summary ({len(df_sum)} HOGs) to: {sum_file}")
 
-    for seq1, seq2 in pairs:
-        if len(seq1) != len(seq2):
-            continue
+    if pair_rows:
+        df_pair = pd.DataFrame(pair_rows)
+        pair_file = os.path.join(outdir, f"{prefix}kaks_pairwise_{hog_type}.tsv")
+        df_pair.to_csv(pair_file, sep='\t', index=False)
+        print(f"[INFO] Saved pairwise dN/dS table ({len(df_pair)} pairs) to: {pair_file}")
 
-        S_sites = 0
-        N_sites = 0
-        S_diff = 0
-        N_diff = 0
+    if HAS_MATPLOTLIB:
+        ratios = df_sum['dN_dS'].replace([np.inf, -np.inf], np.nan).dropna()
+        if len(ratios):
+            plt.figure(figsize=(8, 6))
+            sns.histplot(ratios, kde=True)
+            plt.axvline(1.0, color='red', linestyle='--', linewidth=1,
+                        label='dN/dS = 1 (neutral)')
+            plt.title(f"Distribution of per-HOG dN/dS ({hog_type})")
+            plt.xlabel("dN/dS (omega)")
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(os.path.join(outdir, f"{prefix}kaks_dist_{hog_type}.png"), dpi=150)
+            plt.close()
 
-        for i in range(0, len(seq1), 3):
-            c1 = seq1[i:i+3]
-            c2 = seq2[i:i+3]
+def _write_kakscalculator_outputs(kc_rows, hog_type, outdir, prefix):
+    """Write the per-pair table produced by the external KaKs_Calculator."""
+    if not kc_rows:
+        print("[WARNING] No Ka/Ks results generated (KaKs_Calculator produced no output).")
+        return
+    df_res = pd.DataFrame(kc_rows)
+    out_file = os.path.join(outdir, f"{prefix}kaks_results_{hog_type}.tsv")
+    df_res.to_csv(out_file, sep='\t', index=False)
+    print(f"[INFO] Saved Ka/Ks results ({len(df_res)} pairs) to: {out_file}")
 
-            if len(c1) < 3 or len(c2) < 3:
-                continue
-            if '-' in c1 or '-' in c2:
-                continue
-            if 'N' in c1 or 'N' in c2:
-                continue
-
-            try:
-                aa1 = table.forward_table.get(c1, '*')
-                aa2 = table.forward_table.get(c2, '*')
-            except Exception:
-                continue
-
-            if aa1 == '*' or aa2 == '*':
-                continue
-
-            diffs = sum(1 for j in range(3) if c1[j] != c2[j])
-            if diffs == 0:
-                continue
-
-            if aa1 == aa2:
-                S_diff += diffs
-                S_sites += 1
-            else:
-                N_diff += diffs
-                N_sites += 2.5
-
-        pS = S_diff / (S_sites + 1e-9)
-        pN = N_diff / (N_sites + 1e-9)
-
-        try:
-            Ks = -0.75 * np.log(1 - 4*pS/3)
-            Ka = -0.75 * np.log(1 - 4*pN/3)
-        except Exception:
-            Ks = pS
-            Ka = pN
-
-        if Ks > 0:
-            total_ka += Ka
-            total_ks += Ks
-            valid_pairs += 1
-
-    if valid_pairs == 0:
-        return 0, 0, 0
-
-    avg_ka = total_ka / valid_pairs
-    avg_ks = total_ks / valid_pairs
-    ratio = avg_ka / avg_ks if avg_ks > 0 else 0
-
-    return avg_ka, avg_ks, ratio
+    if HAS_MATPLOTLIB and 'Ka_Ks_Ratio' in df_res:
+        vals = pd.to_numeric(df_res['Ka_Ks_Ratio'], errors='coerce')
+        vals = vals.replace([np.inf, -np.inf], np.nan).dropna()
+        if len(vals):
+            plt.figure(figsize=(8, 6))
+            sns.histplot(vals, kde=True)
+            plt.title(f"Distribution of Ka/Ks Ratios ({hog_type})")
+            plt.xlabel("Ka/Ks Ratio")
+            plt.tight_layout()
+            plt.savefig(os.path.join(outdir, f"{prefix}kaks_dist_{hog_type}.png"), dpi=150)
+            plt.close()
 
 def run_kaks_pipeline(hog_type, method, cds_dir, fasta_dir, dGeneNumbers, ddHOGs, dSpecies, outdir, prefix,
                       aligner="mafft", backtrans="naive", reference=None,
                       mafft_path="mafft", muscle_path="muscle", pal2nal_path="pal2nal.pl",
-                      kakscalculator_path="KaKs_Calculator"):
+                      kakscalculator_path="KaKs_Calculator", model="NG86", codeml_path="codeml"):
     """
-    Orchestrate the Ka/Ks calculation with logic for Paralogs (Private genes).
+    Orchestrate codon-based dN/dS (Ka/Ks) analysis.
+
+    Per HOG: protein MSA (mafft/muscle) -> back-translation to a codon
+    alignment (pal2nal/naive) -> pairwise dN/dS. Engines (``method``):
+    'biopython' (Bio.codonalign; ``model`` = NG86/LWL85/YN00/ML), 'codeml'
+    (PAML, pairwise runmode -2) or 'kakscalculator' (external). With
+    ``reference`` set, pairs are restricted to reference-species-vs-rest.
+    Writes a per-pair table and a per-HOG summary table.
     """
     if not HAS_BIOPYTHON:
         print("[ERROR] Biopython is required for Ka/Ks calculation. Skipping.")
         return
+    if method in ("biopython", "codeml") and not HAS_DNDS:
+        print("[ERROR] panhog_dnds module not found. Cannot run Ka/Ks. Skipping.")
+        return
 
-    print(f"\n=== Starting Ka/Ks Calculation ({method}) ===")
-    print(f"Configuration: Aligner={aligner}, BackTrans={backtrans}, Reference={reference}")
+    detail = f"model={model}, " if method == "biopython" else ""
+    print(f"\n=== Starting Ka/Ks (dN/dS) analysis ===")
+    print(f"Engine={method}, {detail}aligner={aligner}, back-translation={backtrans}, reference={reference}")
+
+    if method == "biopython" and model.upper() in ("YN00", "ML") and not panhog_dnds.HAS_SCIPY:
+        print(f"[WARNING] dN/dS model '{model}' needs SciPy; falling back to NG86.")
+        model = "NG86"
 
     cds_seqs = load_cds_sequences(cds_dir)
     if not cds_seqs:
@@ -995,8 +1010,10 @@ def run_kaks_pipeline(hog_type, method, cds_dir, fasta_dir, dGeneNumbers, ddHOGs
 
     print(f"Selected {len(selected_hogs)} HOGs for analysis.")
 
-    results = []
-    import shutil
+    pair_rows = []       # per-pair dN/dS (biopython / codeml engines)
+    summary_rows = []    # per-HOG mean summary (biopython / codeml engines)
+    kc_rows = []         # per-pair records from external KaKs_Calculator
+    codeml_missing = False
 
     kaks_dir = os.path.join(outdir, "kaks_results")
     os.makedirs(kaks_dir, exist_ok=True)
@@ -1053,17 +1070,37 @@ def run_kaks_pipeline(hog_type, method, cds_dir, fasta_dir, dGeneNumbers, ddHOGs
         except Exception:
             continue
 
-        if method == "biopython":
-            aligned_seqs = [str(r.seq) for r in aligned_cds_obj]
-            ka, ks, ratio = calculate_ng86(aligned_seqs)
-            if ka is not None:
-                results.append({
-                    "HOG": hog_id,
-                    "Ka": ka,
-                    "Ks": ks,
-                    "Ka_Ks_Ratio": ratio,
-                    "Num_Seqs": len(valid_genes)
-                })
+        if method in ("biopython", "codeml"):
+            records = [(r.id, str(r.seq)) for r in aligned_cds_obj]
+            eff_method = "biopython" if codeml_missing else method
+            # Reference pairing only when that species is present in this HOG.
+            ref = reference if (reference and any(
+                hog_species_map.get(g) == reference for g in aligned_ids)) else None
+            try:
+                rows = panhog_dnds.dnds_from_alignment(
+                    records, method=eff_method, model=model,
+                    species_of=hog_species_map, reference=ref,
+                    codeml_path=codeml_path, workdir=kaks_dir)
+            except FileNotFoundError as e:
+                print(f"[WARNING] {e}")
+                print("          Falling back to the built-in 'biopython' engine for the rest of the run.")
+                codeml_missing = True
+                rows = panhog_dnds.dnds_from_alignment(
+                    records, method="biopython", model=model,
+                    species_of=hog_species_map, reference=ref)
+
+            for r in rows:
+                pair_rows.append({"HOG": hog_id, **r})
+            summ = panhog_dnds.summarize_hog(rows)
+            summary_rows.append({
+                "HOG": hog_id,
+                "Num_Seqs": len(valid_genes),
+                "N_Pairs": summ["n_pairs"],
+                "dN": summ["dN"],
+                "dS": summ["dS"],
+                "dN_dS": summ["dN_dS"],
+            })
+
         elif method == "kakscalculator":
             import itertools
             axt_file = os.path.join(kaks_dir, f"temp_{hog_id}.axt")
@@ -1075,6 +1112,9 @@ def run_kaks_pipeline(hog_type, method, cds_dir, fasta_dir, dGeneNumbers, ddHOGs
             if not ref_exists_in_hog and hog_type == 'private':
                 current_reference = None
             elif not ref_exists_in_hog and hog_type != 'private':
+                for f in [temp_prot, temp_cds_in, temp_aln, temp_codon_aln]:
+                    if os.path.exists(f):
+                        os.remove(f)
                 continue
 
             with open(axt_file, "w") as f_axt:
@@ -1102,7 +1142,7 @@ def run_kaks_pipeline(hog_type, method, cds_dir, fasta_dir, dGeneNumbers, ddHOGs
                 try:
                     df_kaks = pd.read_csv(kaks_out, sep="\t")
                     for _, row in df_kaks.iterrows():
-                        results.append({
+                        kc_rows.append({
                             "HOG": hog_id,
                             "Sequence": row['Sequence'],
                             "Ka": row['Ka'],
@@ -1111,26 +1151,18 @@ def run_kaks_pipeline(hog_type, method, cds_dir, fasta_dir, dGeneNumbers, ddHOGs
                         })
                 except Exception:
                     pass
+                os.remove(kaks_out)
+            if os.path.exists(axt_file):
+                os.remove(axt_file)
 
         for f in [temp_prot, temp_cds_in, temp_aln, temp_codon_aln]:
             if os.path.exists(f):
                 os.remove(f)
 
-    if results:
-        df_res = pd.DataFrame(results)
-        out_file = os.path.join(outdir, f"{prefix}kaks_results_{hog_type}.tsv")
-        df_res.to_csv(out_file, sep='\t', index=False)
-        print(f"[INFO] Saved Ka/Ks results to: {out_file}")
-
-        if HAS_MATPLOTLIB:
-            plt.figure(figsize=(8, 6))
-            sns.histplot(df_res['Ka_Ks_Ratio'].dropna(), kde=True)
-            plt.title(f"Distribution of Ka/Ks Ratios ({hog_type})")
-            plt.xlabel("Ka/Ks Ratio")
-            plt.savefig(os.path.join(outdir, f"{prefix}kaks_dist_{hog_type}.png"))
-            plt.close()
+    if method in ("biopython", "codeml"):
+        _write_kaks_outputs(pair_rows, summary_rows, hog_type, outdir, prefix)
     else:
-        print("[WARNING] No Ka/Ks results generated.")
+        _write_kakscalculator_outputs(kc_rows, hog_type, outdir, prefix)
 
 ##################################################
 # Phylogeny and LCA Analysis
@@ -1430,8 +1462,14 @@ def main():
                         help="Directory containing CDS FASTA files. Required for --kaks and --supermatrix.")
     parser.add_argument("--kaks-type", type=str, default="core", choices=["core", "shell", "private", "all"],
                         help="Type of HOGs for Ka/Ks (default: core).")
-    parser.add_argument("--kaks-method", type=str, default="biopython", choices=["biopython", "kakscalculator"],
-                        help="Method for Ka/Ks calculation (default: biopython).")
+    parser.add_argument("--kaks-method", type=str, default="biopython",
+                        choices=["biopython", "codeml", "kakscalculator"],
+                        help="Engine for dN/dS: 'biopython' (Bio.codonalign), "
+                             "'codeml' (PAML pairwise), or 'kakscalculator' (default: biopython).")
+    parser.add_argument("--kaks-model", type=str, default="NG86",
+                        choices=["NG86", "LWL85", "YN00", "ML"],
+                        help="Substitution model for the 'biopython' engine "
+                             "(YN00/ML require SciPy; default: NG86).")
 
     # Phylogeny options
     parser.add_argument("--species-tree", type=str, default=None,
@@ -1452,6 +1490,8 @@ def main():
     parser.add_argument("--muscle-path", type=str, default="muscle")
     parser.add_argument("--pal2nal-path", type=str, default="pal2nal.pl")
     parser.add_argument("--kakscalculator-path", type=str, default="KaKs_Calculator")
+    parser.add_argument("--codeml-path", type=str, default="codeml",
+                        help="Path to the PAML 'codeml' executable (for --kaks-method codeml).")
     parser.add_argument("--blastp-path", type=str, default="blastp")
     parser.add_argument("--makeblastdb-path", type=str, default="makeblastdb")
 
@@ -1623,7 +1663,8 @@ def main():
                               dGeneNumbers, ddHOGs, dSpecies, args.output, args.prefix,
                               args.aligner, args.backtrans, args.reference,
                               args.mafft_path, args.muscle_path, args.pal2nal_path,
-                              args.kakscalculator_path)
+                              args.kakscalculator_path, model=args.kaks_model,
+                              codeml_path=args.codeml_path)
 
     if args.species_tree:
         analyze_phylogeny(ddHOGs, dSpecies, args.species_tree, outdir, prefix)
@@ -1748,18 +1789,19 @@ def main():
                         continue
                 print(f"Running BLASTP for {comp_name} compartment...")
                 blast_output = os.path.join(blast_dir, f"{prefix}{comp_name}_uniprot_blast.xml")
-                blast_cline = NcbiblastpCommandline(
-                    cmd=args.blastp_path,
-                    query=comp_fasta,
-                    db=uniprot_db,
-                    out=blast_output,
-                    outfmt=5,
-                    evalue=1e-5,
-                    num_threads=args.threads,
-                    max_target_seqs=1
-                )
+                blast_cmd = [
+                    args.blastp_path,
+                    "-query", comp_fasta,
+                    "-db", uniprot_db,
+                    "-out", blast_output,
+                    "-outfmt", "5",
+                    "-evalue", "1e-5",
+                    "-num_threads", str(args.threads),
+                    "-max_target_seqs", "1",
+                ]
                 try:
-                    stdout, stderr = blast_cline()
+                    subprocess.run(blast_cmd, check=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     print(f"BLASTP completed for {comp_name} compartment. Results saved to {blast_output}")
                     annotation_file = os.path.join(anno_dir, f"{prefix}{comp_name}_annotations.tsv")
                     with open(blast_output, 'rb') as blast_file, open(annotation_file, 'w', encoding='utf-8') as out_handle:
