@@ -47,6 +47,12 @@ try:
 except ImportError:
     HAS_DNDS = False
 
+try:
+    import panhog_phylo
+    HAS_PHYLO = True
+except ImportError:
+    HAS_PHYLO = False
+
 ##############################
 # Configuration Loading
 ##############################
@@ -1168,89 +1174,24 @@ def run_kaks_pipeline(hog_type, method, cds_dir, fasta_dir, dGeneNumbers, ddHOGs
 # Phylogeny and LCA Analysis
 ##################################################
 
-def find_lca(tree, species_list):
+def analyze_phylogeny(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix):
     """
-    Find the Lowest Common Ancestor (LCA) of a list of species in a given tree.
+    Phylogeny-aware analysis of HOG distribution on the species tree.
+
+    Delegates to ``panhog_phylo.analyze``, which performs deterministic
+    internal-node naming, species/tip validation, HOG->LCA mapping with a
+    phylogenetic-diversity fraction, and Dollo-parsimony gain/loss
+    reconstruction, writing the result tables plus an annotated Newick tree.
     """
-    if not species_list:
-        return None
-
-    terminals = []
-    for sp in species_list:
-        matches = tree.find_elements(name=sp)
-        try:
-            node = next(matches)
-            terminals.append(node)
-        except StopIteration:
-            pass
-
-    if not terminals:
-        return None
-
-    if len(terminals) == 1:
-        return terminals[0]
-
-    try:
-        lca = tree.common_ancestor(terminals)
-        return lca
-    except Exception as e:
-        print(f"[WARNING] Could not calculate LCA: {e}")
-        return None
-
-def analyze_phylogeny(ddHOGs, dSpecies, species_tree_file, outdir, prefix):
-    """
-    Analyze the phylogenetic distribution of HOGs using the species tree.
-    """
+    if not HAS_PHYLO:
+        print("[ERROR] panhog_phylo module not found. Skipping phylogenetic analysis.")
+        return
     if not HAS_BIOPYTHON:
-        print("[ERROR] Biopython is required for Phylogenetic Analysis. Skipping.")
+        print("[ERROR] Biopython is required for phylogenetic analysis. Skipping.")
         return
 
-    print(f"\n[INFO] Starting Phylogenetic LCA Analysis using {species_tree_file}...")
-
-    try:
-        tree = Phylo.read(species_tree_file, "newick")
-    except Exception as e:
-        print(f"[ERROR] Failed to read species tree {species_tree_file}: {e}")
-        return
-
-    lca_results = []
-
-    for hog_id, hog_obj in ddHOGs.items():
-        present_species = []
-        for sp in hog_obj.members:
-            glist = hog_obj.members[sp].get('', "")
-            if glist.strip():
-                present_species.append(sp)
-
-        if not present_species:
-            continue
-
-        lca = find_lca(tree, present_species)
-
-        lca_name = "Unknown"
-        if lca:
-            lca_name = lca.name if lca.name else "Node"
-            if not lca.name:
-                lca_name = f"Internal_Node_{id(lca)}"
-
-        lca_results.append({
-            "HOG": hog_id,
-            "Num_Species": len(present_species),
-            "LCA_Node": lca_name,
-            "Species_List": ",".join(present_species)
-        })
-
-    if lca_results:
-        df = pd.DataFrame(lca_results)
-        out_file = os.path.join(outdir, f"{prefix}hog_lca_analysis.tsv")
-        df.to_csv(out_file, sep='\t', index=False)
-        print(f"[INFO] Saved LCA analysis to: {out_file}")
-
-        lca_counts = df['LCA_Node'].value_counts()
-        print("\nHOGs per Ancestral Node:")
-        print(lca_counts)
-    else:
-        print("[WARNING] No LCA results generated.")
+    print(f"\n[INFO] Starting phylogeny-aware analysis using {species_tree_file}...")
+    panhog_phylo.analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix)
 
 ##################################################
 # Supermatrix Generation
@@ -1667,7 +1608,7 @@ def main():
                               codeml_path=args.codeml_path)
 
     if args.species_tree:
-        analyze_phylogeny(ddHOGs, dSpecies, args.species_tree, outdir, prefix)
+        analyze_phylogeny(dGeneNumbers, dSpecies, args.species_tree, outdir, prefix)
 
     if args.supermatrix:
         if args.cds is None:
