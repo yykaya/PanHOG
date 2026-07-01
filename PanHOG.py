@@ -1174,7 +1174,8 @@ def run_kaks_pipeline(hog_type, method, cds_dir, fasta_dir, dGeneNumbers, ddHOGs
 # Phylogeny and LCA Analysis
 ##################################################
 
-def analyze_phylogeny(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix):
+def analyze_phylogeny(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix,
+                      pan_weighted=False, pan_weighted_core=0.9, pan_weighted_private=0.1):
     """
     Phylogeny-aware analysis of HOG distribution on the species tree.
 
@@ -1191,7 +1192,10 @@ def analyze_phylogeny(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix)
         return
 
     print(f"\n[INFO] Starting phylogeny-aware analysis using {species_tree_file}...")
-    panhog_phylo.analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix)
+    panhog_phylo.analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix,
+                         pan_weighted=pan_weighted,
+                         pan_weighted_core=pan_weighted_core,
+                         pan_weighted_private=pan_weighted_private)
 
 ##################################################
 # Supermatrix Generation
@@ -1417,6 +1421,14 @@ def main():
                         help="Species tree file (Newick format) for LCA analysis.")
     parser.add_argument("--supermatrix", action="store_true",
                         help="Generate supermatrix from single-copy orthologs.")
+    parser.add_argument("--pan-weighted", action="store_true",
+                        help="Phylogenetic-diversity-weighted core/shell/private "
+                             "classification plus per-clade compartments "
+                             "(requires --species-tree).")
+    parser.add_argument("--pan-weighted-core", type=float, default=0.9,
+                        help="PD-fraction >= this is 'core' for --pan-weighted (default: 0.9).")
+    parser.add_argument("--pan-weighted-private", type=float, default=0.1,
+                        help="PD-fraction <= this is 'private' for --pan-weighted (default: 0.1).")
 
     # Advanced options
     parser.add_argument("--aligner", type=str, default="mafft", choices=["mafft", "muscle"],
@@ -1608,7 +1620,10 @@ def main():
                               codeml_path=args.codeml_path)
 
     if args.species_tree:
-        analyze_phylogeny(dGeneNumbers, dSpecies, args.species_tree, outdir, prefix)
+        analyze_phylogeny(dGeneNumbers, dSpecies, args.species_tree, outdir, prefix,
+                          pan_weighted=args.pan_weighted,
+                          pan_weighted_core=args.pan_weighted_core,
+                          pan_weighted_private=args.pan_weighted_private)
 
     if args.supermatrix:
         if args.cds is None:

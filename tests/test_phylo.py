@@ -150,5 +150,67 @@ def test_analyze_writes_all_outputs(tmp_path):
     assert "N" in annotated.read_text()  # internal node names were written
 
 
+# ---- Tier 2.1: PD-weighted classification ----
+
+def test_pd_weighted_classification():
+    tree = make_tree()
+    below = ph.tips_below(tree)
+    presence = {
+        "h_all": {"A", "B", "C", "D", "E"},   # spans the whole tree -> core
+        "h_cd": {"C", "D"},                    # PD 2/9 ~ 0.22 -> shell
+        "h_a": {"A"},                          # single tip, PD 0 -> private
+    }
+    rows, counts = ph.pd_weighted_classification(
+        tree, presence, core_threshold=0.9, private_threshold=0.1, below=below)
+    by = {r["HOG"]: r for r in rows}
+    assert by["h_all"]["Weighted_Class"] == "core"
+    assert by["h_cd"]["Weighted_Class"] == "shell"
+    assert by["h_a"]["Weighted_Class"] == "private"
+    assert counts == {"core": 1, "shell": 1, "private": 1}
+
+
+# ---- Tier 2.2: clade-conditioned compartments ----
+
+def test_clade_compartments_counts_within_each_clade():
+    tree = make_tree()
+    below = ph.tips_below(tree)
+    presence = {
+        "h_all": {"A", "B", "C", "D", "E"},
+        "h_ab": {"A", "B"},
+        "h_a": {"A"},
+        "h_cde": {"C", "D", "E"},
+    }
+    rows = ph.clade_compartments(tree, presence, below)
+    by_node = {r["Node"]: r for r in rows}
+    # Postorder naming: (A,B)=N0, (C,D)=N1, (CD,E)=N2, root=N3
+    ab = by_node["N0"]
+    assert ab["Num_Tips"] == 2
+    assert (ab["Clade_Core"], ab["Clade_Shell"], ab["Clade_Private"]) == (2, 0, 1)
+    assert ab["HOGs_Present"] == 3
+    root = by_node["N3"]
+    assert root["Num_Tips"] == 5
+    assert (root["Clade_Core"], root["Clade_Shell"], root["Clade_Private"]) == (1, 2, 1)
+    assert root["HOGs_Present"] == 4
+
+
+def test_analyze_writes_weighted_outputs(tmp_path):
+    tree_file = tmp_path / "sp.nwk"
+    tree_file.write_text(NWK)
+    dSpecies = {3: "A", 4: "B", 5: "C", 6: "D", 7: "E"}
+    dGeneNumbers = {
+        "HOG1": [1, 1, 1, 1, 1],   # spans whole tree -> core
+        "HOG2": [1, 0, 0, 0, 0],   # single tip -> private
+    }
+    paths = ph.analyze(dGeneNumbers, dSpecies, str(tree_file), str(tmp_path), "t_",
+                       pan_weighted=True)
+    assert os.path.exists(paths["weighted"])
+    assert os.path.exists(paths["clade"])
+    import pandas as pd
+    w = pd.read_csv(paths["weighted"], sep="\t")
+    cls = dict(zip(w["HOG"], w["Weighted_Class"]))
+    assert cls["HOG1"] == "core"
+    assert cls["HOG2"] == "private"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
