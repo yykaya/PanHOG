@@ -34,8 +34,12 @@ results/
 /full_run/
 /weighted_run/
 /dist_run/
+/genetree_run/
+/cli_gt/
+/gtv/
 /validation_data/
 *.log
+*.raxml.*
 UPGRADE_RUN_REPORT.md
 
 # PAML codeml scratch files (written to CWD by codeml)

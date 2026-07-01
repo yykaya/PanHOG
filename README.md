@@ -28,7 +28,8 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 - **dN/dS engines (`--kaks-method`)**: `biopython` (via `Bio.codonalign`, with `--kaks-model` NG86/LWL85/YN00/ML), `codeml` (PAML pairwise, `runmode -2`), or `kakscalculator`. The `codeml` engine falls back to the built-in engine if the executable is absent.
 - **Pairwise dN/dS output**: writes both a per-HOG summary (`kaks_results_<type>.tsv`) and a per-pair table (`kaks_pairwise_<type>.tsv`); `--reference` restricts pairs to reference-species-vs-rest.
 - **Phylogeny-aware analysis (`--species-tree`)**: deterministic internal-node naming and an annotated Newick tree, species/tip validation, HOG→LCA mapping with a Faith's phylogenetic-diversity (PD) fraction, and **Dollo-parsimony gain/loss reconstruction** with per-branch gene-family gain/loss counts.
-- **Test suite**: `pytest` tests covering the dN/dS engine, the Ka/Ks pipeline end-to-end, and the phylogeny module.
+- **Gene-tree validation of compartment calls (`--gene-trees`)**: builds per-HOG **protein and codon (CDS) ML trees** (MAFFT → RAxML-NG) and compares them, checking whether the grouped genes are genuinely divergent and topologically consistent with the species tree (normalised Robinson-Foulds). The codon tree — with ~3× the sites and synonymous signal — is the primary arbiter at shallow pangenome divergence. Each HOG gets a status: **Confirmed / Redundant / Conflict / Low-signal**. **Private genes** are validated by **BLAST** against every other accession (a strong hit elsewhere means a likely missed ortholog, not a truly private gene). Uses accession-labelled tips so shared gene IDs don't collide.
+- **Test suite**: `pytest` tests covering the dN/dS engine, the Ka/Ks pipeline end-to-end, the phylogeny module, and gene-tree validation.
 
 ### [v0.2.0] - 2026-02-27
 
@@ -90,6 +91,7 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 | Functional Annotation | `--funano` | BLAST-based annotation against UniProt |
 | Ka/Ks (dN/dS) Analysis | `--kaks` | Codon-based selection analysis (biopython / PAML codeml / KaKs_Calculator) |
 | Phylogeny-aware Analysis | `--species-tree` | HOG→LCA + PD fraction + Dollo gain/loss on the species tree |
+| Gene-tree Validation | `--gene-trees` | Per-HOG protein + codon ML trees (MAFFT + RAxML-NG) + private-gene BLAST to validate core/shell/private calls |
 | Supermatrix | `--supermatrix` | Concatenated single-copy orthologs for phylogenomics |
 | Config File | `--config` | YAML-based configuration |
 
@@ -235,6 +237,13 @@ pangenehog --hog N0.tsv --fasta ./peptides/ --pan -o results/
 | `--backtrans` | Back-translation method: `naive` (built-in) or `pal2nal`. | `naive` |
 | `--reference` | Reference species for pairwise Ka/Ks analysis. | `None` |
 | `--species-tree` | Path to Newick species tree for phylogenetic LCA analysis. | `None` |
+| `--gene-trees` | Validate compartment calls with per-HOG ML gene trees (MAFFT + RAxML-NG). Writes `genetree_validation.tsv`. | `False` |
+| `--gene-trees-per-class` | Candidate HOGs per compartment for `--gene-trees`. | `3` |
+| `--gene-tree-hogs` | Comma-separated HOG IDs for `--gene-trees` (overrides auto selection). | `None` |
+| `--gene-tree-model` | RAxML-NG **protein** model for `--gene-trees`. | `LG+G` |
+| `--gene-tree-codon-model` | RAxML-NG **codon/nucleotide** model (codon tree is built when `--cds` is given). | `GTR+G` |
+| `--gene-tree-bs` | Bootstrap replicates per gene tree. | `100` |
+| `--raxml-ng-path` | Path to the RAxML-NG executable. | `raxml-ng` |
 | `--supermatrix` | Generate supermatrix from single-copy orthologs. | `False` |
 
 ### Tool Paths

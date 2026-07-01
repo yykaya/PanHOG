@@ -53,6 +53,12 @@ try:
 except ImportError:
     HAS_PHYLO = False
 
+try:
+    import panhog_genetrees
+    HAS_GENETREES = True
+except ImportError:
+    HAS_GENETREES = False
+
 ##############################
 # Configuration Loading
 ##############################
@@ -1417,6 +1423,23 @@ def main():
                         help="Species tree file (Newick format) for LCA analysis.")
     parser.add_argument("--supermatrix", action="store_true",
                         help="Generate supermatrix from single-copy orthologs.")
+    parser.add_argument("--gene-trees", action="store_true",
+                        help="Phylogenetically validate compartment calls: build a per-HOG "
+                             "ML gene tree (MAFFT + RAxML-NG) and flag HOGs whose members are "
+                             "near-identical or whose tree conflicts with the species tree.")
+    parser.add_argument("--gene-trees-per-class", type=int, default=3,
+                        help="Candidate HOGs per compartment for --gene-trees (default: 3).")
+    parser.add_argument("--gene-tree-hogs", type=str, default=None,
+                        help="Comma-separated HOG IDs for --gene-trees (overrides auto selection).")
+    parser.add_argument("--gene-tree-model", type=str, default="LG+G",
+                        help="RAxML-NG protein model for --gene-trees (default: LG+G).")
+    parser.add_argument("--gene-tree-codon-model", type=str, default="GTR+G",
+                        help="RAxML-NG codon/nucleotide model for the CDS tree "
+                             "(default: GTR+G; the codon tree is built when --cds is given).")
+    parser.add_argument("--gene-tree-bs", type=int, default=100,
+                        help="Bootstrap replicates per gene tree for --gene-trees (default: 100).")
+    parser.add_argument("--raxml-ng-path", type=str, default="raxml-ng",
+                        help="Path to the RAxML-NG executable (for --gene-trees).")
 
     # Advanced options
     parser.add_argument("--aligner", type=str, default="mafft", choices=["mafft", "muscle"],
@@ -1609,6 +1632,21 @@ def main():
 
     if args.species_tree:
         analyze_phylogeny(dGeneNumbers, dSpecies, args.species_tree, outdir, prefix)
+
+    if args.gene_trees:
+        if not HAS_GENETREES:
+            print("[ERROR] panhog_genetrees module not found. Skipping gene-tree validation.")
+        else:
+            hog_ids = ([h.strip() for h in args.gene_tree_hogs.split(",") if h.strip()]
+                       if args.gene_tree_hogs else None)
+            panhog_genetrees.run(
+                hogsfile=args.hog, fasta_dir=fasta_dir, outdir=outdir, prefix=prefix,
+                cds_dir=args.cds, species_tree=args.species_tree,
+                per_class=args.gene_trees_per_class, hog_ids=hog_ids,
+                mafft_path=args.mafft_path, raxml_path=args.raxml_ng_path,
+                blastp_path=args.blastp_path, makeblastdb_path=args.makeblastdb_path,
+                prot_model=args.gene_tree_model, codon_model=args.gene_tree_codon_model,
+                bs_trees=args.gene_tree_bs)
 
     if args.supermatrix:
         if args.cds is None:
