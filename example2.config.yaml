@@ -51,15 +51,17 @@ color_pan_clade2: "#3498db"
 zscore: false
 log: true
 
-# Ka/Ks analysis (requires CDS FASTA files)
+# Ka/Ks (dN/dS) analysis (requires CDS FASTA files)
 # kaks: true
 # cds: "path/to/cds_directory"
 # kaks_type: "core"         # core, shell, private, all
-# kaks_method: "biopython"  # biopython or kakscalculator
+# kaks_method: "biopython"  # biopython, codeml (PAML), or kakscalculator
+# kaks_model: "NG86"        # biopython sub-model: NG86, LWL85, YN00, ML
 # aligner: "mafft"          # mafft or muscle
 # backtrans: "naive"        # naive or pal2nal
+# reference: "speciesA"     # optional: pairwise reference-vs-rest dN/dS
 
-# Phylogeny LCA analysis
+# Phylogeny-aware analysis (LCA + PD fraction + Dollo gain/loss)
 # species_tree: "path/to/species_tree.nwk"
 
 # Supermatrix from single-copy orthologs

@@ -45,17 +45,23 @@ color_pan_clade2: "#3498db"
 zscore: false
 log: true
 
-# Ka/Ks analysis (requires CDS FASTA files and mafft)
+# Ka/Ks (dN/dS) analysis (requires CDS FASTA files and an aligner such as mafft)
 # kaks: true
 # cds: "/path/to/cds/fasta"
-# kaks_type: "core"       # core, shell, private, or all
-# kaks_method: "biopython" # biopython or kakscalculator
+# kaks_type: "core"        # core, shell, private, or all
+# kaks_method: "biopython" # biopython, codeml (PAML), or kakscalculator
+# kaks_model: "NG86"       # biopython sub-model: NG86, LWL85, YN00, ML (YN00/ML need scipy)
 # aligner: "mafft"         # mafft or muscle
 # backtrans: "naive"       # naive or pal2nal
-# reference: "Col_PEK"     # reference species for pairwise Ka/Ks
+# reference: "Col_PEK"     # reference species -> pairwise reference-vs-rest dN/dS
+# codeml_path: "codeml"    # path to PAML codeml (only for kaks_method: codeml)
+# Outputs: <prefix>kaks_results_<type>.tsv (per-HOG summary) and
+#          <prefix>kaks_pairwise_<type>.tsv (per-pair dN, dS, dN/dS)
 
-# Phylogeny LCA analysis (requires Newick species tree)
+# Phylogeny-aware analysis (requires a Newick species tree)
 # species_tree: "/path/to/species_tree.nwk"
+# Outputs: hog_lca_analysis.tsv (LCA + PD fraction), hog_gainloss.tsv (Dollo
+#          gains/losses), phylo_node_summary.tsv and species_tree_annotated.nwk
 
 # Supermatrix generation (requires CDS files)
 # supermatrix: true

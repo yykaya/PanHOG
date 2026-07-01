@@ -15,6 +15,21 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 
 ## Changelog
 
+### [v0.3.0] - 2026-07-01
+
+#### Fixes
+
+- **Correct Ka/Ks (dN/dS)**: The previous built-in Nei-Gojobori routine counted synonymous/non-synonymous *sites* with arbitrary constants and only on differing codons, producing uninterpretable values. dN/dS is now delegated to validated engines, and undefined quantities are reported as `NaN` instead of fabricated numbers.
+- **Modern BioPython compatibility**: Importing the removed `Bio.Blast.Applications.NcbiblastpCommandline` disabled *all* BioPython features (Ka/Ks, phylogeny, supermatrix, annotation) on BioPython ≥ 1.85. Core imports are now separated and BLASTP runs via subprocess.
+- **Packaging**: `panhog_dnds` now ships with the package (the installed `panhog` command could not previously import the Ka/Ks engine); the duplicate top-level `meta.yaml` was removed and generated build artifacts are no longer tracked.
+
+#### New Features
+
+- **dN/dS engines (`--kaks-method`)**: `biopython` (via `Bio.codonalign`, with `--kaks-model` NG86/LWL85/YN00/ML), `codeml` (PAML pairwise, `runmode -2`), or `kakscalculator`. The `codeml` engine falls back to the built-in engine if the executable is absent.
+- **Pairwise dN/dS output**: writes both a per-HOG summary (`kaks_results_<type>.tsv`) and a per-pair table (`kaks_pairwise_<type>.tsv`); `--reference` restricts pairs to reference-species-vs-rest.
+- **Phylogeny-aware analysis (`--species-tree`)**: deterministic internal-node naming and an annotated Newick tree, species/tip validation, HOG→LCA mapping with a Faith's phylogenetic-diversity (PD) fraction, and **Dollo-parsimony gain/loss reconstruction** with per-branch gene-family gain/loss counts.
+- **Test suite**: `pytest` tests covering the dN/dS engine, the Ka/Ks pipeline end-to-end, and the phylogeny module.
+
 ### [v0.2.0] - 2026-02-27
 
 #### New Features
@@ -73,8 +88,8 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 | PAV Matrix | `--pav` | Presence/Absence Variant matrix |
 | Count Matrix | `--matrix` | Gene copy number matrix |
 | Functional Annotation | `--funano` | BLAST-based annotation against UniProt |
-| Ka/Ks Analysis | `--kaks` | Selection analysis on orthologous groups |
-| Phylogenetic LCA | `--species-tree` | Map HOGs to species tree nodes |
+| Ka/Ks (dN/dS) Analysis | `--kaks` | Codon-based selection analysis (biopython / PAML codeml / KaKs_Calculator) |
+| Phylogeny-aware Analysis | `--species-tree` | HOG→LCA + PD fraction + Dollo gain/loss on the species tree |
 | Supermatrix | `--supermatrix` | Concatenated single-copy orthologs for phylogenomics |
 | Config File | `--config` | YAML-based configuration |
 
@@ -108,6 +123,19 @@ pip install -e .
 ```
 
 After installation, the `panhog` and `pangenehog` commands are available system-wide.
+
+### Development & Testing
+
+```bash
+# Install with test/optional dependencies (scipy enables the YN00/ML dN/dS models)
+pip install -e ".[dev]"
+
+# Run the test suite
+pytest
+```
+
+External tools used by some analyses (`mafft`, `muscle`, `pal2nal`, PAML `codeml`,
+BLAST+) are best installed via conda; see `environment.yml`.
 
 ---
 
@@ -200,7 +228,9 @@ pangenehog --hog N0.tsv --fasta ./peptides/ --pan -o results/
 | `--kaks` | Perform Ka/Ks (dN/dS) selection analysis. | `False` |
 | `--cds` | Path to directory containing CDS FASTA files (required for `--kaks`). | `None` |
 | `--kaks-type` | HOG type for Ka/Ks analysis: `core`, `shell`, `private`, `all`. | `core` |
-| `--kaks-method` | Ka/Ks calculation method: `biopython` or `kakscalculator`. | `biopython` |
+| `--kaks-method` | dN/dS engine: `biopython`, `codeml` (PAML), or `kakscalculator`. | `biopython` |
+| `--kaks-model` | Sub-model for the `biopython` engine: `NG86`, `LWL85`, `YN00`, `ML` (YN00/ML need SciPy). | `NG86` |
+| `--codeml-path` | Path to the PAML `codeml` executable (for `--kaks-method codeml`). | `codeml` |
 | `--aligner` | Protein alignment tool: `mafft` or `muscle`. | `mafft` |
 | `--backtrans` | Back-translation method: `naive` (built-in) or `pal2nal`. | `naive` |
 | `--reference` | Reference species for pairwise Ka/Ks analysis. | `None` |
@@ -314,8 +344,8 @@ panhog --hog N0.tsv --fasta ./peptides/ --config config.yaml
 * `pav_matrix.tsv`, `count_matrix.tsv`
 * `genevar_heatmap.[png|pdf|svg]`
 * `saturation_analysis.[png|pdf|svg]`
-* `kaks_results.tsv` (v0.2.0)
-* `phylogeny_lca_results.tsv` (v0.2.0)
+* `kaks_results_<type>.tsv` (per-HOG dN/dS summary), `kaks_pairwise_<type>.tsv` (per-pair dN/dS) (v0.3.0)
+* `hog_lca_analysis.tsv` (LCA + PD fraction), `hog_gainloss.tsv` (Dollo gains/losses), `phylo_node_summary.tsv`, `species_tree_annotated.nwk` (v0.3.0)
 * `supermatrix.fasta`, `supermatrix_partitions.txt` (v0.2.0)
 
 ---
@@ -327,8 +357,8 @@ panhog --hog N0.tsv --fasta ./peptides/ --config config.yaml
 * Use `--proteome` to extract FASTA of shared pangenes.
 * Use `--saturation-cladepair` for insight into core/pan genome expansion across defined clades.
 * Use `--genevar` with `--zscore` for population-scale expansions or contractions.
-* Use `--kaks` with `--kaks-type core` to identify genes under selection in the core genome.
-* Use `--species-tree` with a well-supported phylogeny for evolutionary context.
+* Use `--kaks` with `--kaks-type core` to identify genes under selection in the core genome; add `--kaks-method codeml` for PAML-based estimates or `--reference <species>` for pairwise reference-vs-rest dN/dS.
+* Use `--species-tree` with a well-supported phylogeny to obtain per-branch gene-family gain/loss (Dollo) and a phylogenetic-diversity fraction per HOG.
 * Use `--supermatrix` to generate input for phylogenomic tree inference.
 
 ---
