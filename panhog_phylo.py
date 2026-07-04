@@ -519,6 +519,17 @@ def analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix, writer=No
               f"{len(conf_rows) - n_same} reclassified; "
               f"top: {dict(transitions.most_common(3))})")
 
+        # PD-weighted pangenome summary + plots (pie, U-shaped histogram, stacked bar).
+        try:
+            import panhog_pansummary
+            pd_class = {r["HOG"]: r["Weighted_Class"] for r in w_rows}
+            pd_occ = {r["HOG"]: r["Num_Species"] for r in w_rows}
+            panhog_pansummary.summarize(pd_class, pd_occ, outdir, prefix,
+                                        approach="PD-weighted",
+                                        n_accessions=len(tree.get_terminals()))
+        except Exception as e:  # noqa: BLE001
+            print(f"[WARNING] PD-weighted pangenome summary skipped: {e}")
+
     _write_phylo_readme(outdir, prefix, pan_weighted)
     return paths
 
@@ -587,6 +598,14 @@ Per-HOG gene-tree validation (protein + codon ML trees) with a Status
 is well supported but disagrees with the species tree -> members are probably NOT
 clean orthologs; be careful using this HOG. gene_trees/ holds the trees + example
 plots. See {p}genetree_flagged.tsv for just the flagged HOGs.
+
+## {p}pangenome_summary.tsv + pie / occupancy histogram / stacked bar
+PD-weighted pangenome composition: {p}pangenome_summary.tsv (compartment counts +
+percentages), {p}pangenome_pie.png, {p}occupancy_histogram.png (U-shaped: families vs
+number of accessions, coloured by PD-weighted compartment) and
+{p}compartment_stacked_bar.png. {p}occupancy_histogram.tsv is the raw plotted data.
+The SAME set is produced for the frequency-based classification under
+panhog_classification/, so the two approaches can be compared directly.
 """
     try:
         with open(os.path.join(outdir, "README.md"), "w") as fh:

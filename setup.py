@@ -20,7 +20,7 @@ setup(
     # Ka/Ks (dN/dS), phylogeny-aware, gene-tree validation, or compartment Ka/Ks
     # analyses.
     py_modules=["PanHOG", "PangeneHOG", "panhog_dnds", "panhog_phylo",
-                "panhog_genetrees", "panhog_kaks_compartments"],
+                "panhog_genetrees", "panhog_kaks_compartments", "panhog_pansummary"],
 
     entry_points={
         'console_scripts': [

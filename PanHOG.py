@@ -65,6 +65,12 @@ try:
 except ImportError:
     HAS_KAKS_COMPARTMENTS = False
 
+try:
+    import panhog_pansummary
+    HAS_PANSUMMARY = True
+except ImportError:
+    HAS_PANSUMMARY = False
+
 ##############################
 # Configuration Loading
 ##############################
@@ -1685,6 +1691,20 @@ def main():
         extract_compartment_genes_per_species(
             os.path.join(panhog_classification_dir, f"{prefix}{_comp}.HOGs.tsv"),
             _comp, panhog_classification_dir, prefix)
+
+    # Frequency-based pangenome summary + plots (pie, U-shaped occupancy histogram,
+    # stacked bar) with the raw plotted TSVs.
+    if HAS_PANSUMMARY:
+        _n_sp = len(dSpecies)
+        _fclass, _focc = {}, {}
+        for _hog, _counts in dGeneNumbers.items():
+            _k = sum(1 for _c in _counts if _c > 0)
+            if _k == 0:
+                continue
+            _focc[_hog] = _k
+            _fclass[_hog] = "core" if _k >= _n_sp else ("private" if _k == 1 else "shell")
+        panhog_pansummary.summarize(_fclass, _focc, panhog_classification_dir,
+                                    prefix, approach="frequency", n_accessions=_n_sp)
 
     if args.proteome is not None:
         if proteome_filter is None:
