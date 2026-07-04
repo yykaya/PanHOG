@@ -15,9 +15,10 @@ statement rather than a bare count.
 
 1. Extract member sequences with **accession-labelled tips** (each accession's
    FASTA is read separately, so shared gene IDs never collide).
-2. **Protein tree**: MAFFT protein alignment → RAxML-NG (`LG+G`).
-3. **Codon tree**: the same protein alignment back-translated to a **codon (CDS)
-   alignment** → RAxML-NG (`GTR+G`).
+2. **Protein tree** (default; peptides are always available): MAFFT protein
+   alignment → RAxML-NG (`LG+G`).
+3. **Codon tree** (optional, built only when `--cds` is given): the same protein
+   alignment back-translated to a **codon (CDS) alignment** → RAxML-NG (`GTR+G`).
 4. Score each tree (divergence, bootstrap support, normalised Robinson-Foulds vs
    the species tree), measure protein-vs-codon agreement, and assign a status.
 
