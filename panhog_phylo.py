@@ -474,14 +474,44 @@ def analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix, writer=No
         w_rows, w_counts = pd_weighted_classification(
             tree, presence, pan_weighted_core, pan_weighted_private, below)
         c_rows = clade_compartments(tree, presence, below)
+
+        # Confidence: does the frequency-based compartment (core = all tips,
+        # private = 1 tip, shell = in between) agree with the PD-weighted class?
+        n_tips = len(tree.get_terminals())
+
+        def _flat(k):
+            return "core" if k >= n_tips else ("private" if k == 1 else "shell")
+
+        conf_rows, n_same, transitions = [], 0, Counter()
+        for w in w_rows:
+            fc, wc = _flat(w["Num_Species"]), w["Weighted_Class"]
+            agree = fc == wc
+            n_same += agree
+            if not agree:
+                transitions[f"{fc}->{wc}"] += 1
+            conf_rows.append({
+                "HOG": w["HOG"], "Num_Species": w["Num_Species"],
+                "Flat_Class": fc, "PD_Fraction": w["PD_Fraction"],
+                "Weighted_Class": wc,
+                "Agreement": "Same" if agree else "Reclassified",
+                "Change": "" if agree else f"{fc}->{wc}",
+            })
+
         paths["weighted"] = os.path.join(outdir, f"{prefix}hog_pd_weighted_class.tsv")
         paths["clade"] = os.path.join(outdir, f"{prefix}clade_compartments.tsv")
+        paths["confidence"] = os.path.join(outdir, f"{prefix}classification_confidence.tsv")
         writer(w_rows, paths["weighted"])
         writer(c_rows, paths["clade"])
+        writer(conf_rows, paths["confidence"])
         print(f"[INFO] Saved PD-weighted class-> {paths['weighted']} "
               f"(core={w_counts['core']}, shell={w_counts['shell']}, "
               f"private={w_counts['private']})")
         print(f"[INFO] Saved clade compartments-> {paths['clade']} "
               f"({len(c_rows)} clades)")
+        pct = 100.0 * n_same / len(conf_rows) if conf_rows else 0.0
+        print(f"[INFO] Saved classification confidence-> {paths['confidence']} "
+              f"({n_same}/{len(conf_rows)} = {pct:.1f}% agree with frequency; "
+              f"{len(conf_rows) - n_same} reclassified; "
+              f"top: {dict(transitions.most_common(3))})")
 
     return paths

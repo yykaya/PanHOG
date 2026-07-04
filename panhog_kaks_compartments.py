@@ -111,7 +111,8 @@ def plot_compartment_dnds(data, outpath, pvalue=None, ymax=None):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    colors = {"core": "#d62728", "shell": "#1f77b4", "private": "#2ca02c"}
+    # "Watermelon Sorbet" palette
+    colors = {"core": "#ef476f", "shell": "#ffd166", "private": "#06d6a0"}
     labels = {"core": "Core", "shell": "Shell", "private": "Private"}
     order = [c for c in ("core", "shell", "private") if data.get(c)]
     vals = [data[c] for c in order]

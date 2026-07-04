@@ -532,7 +532,46 @@ def validate_hog(hog, occ_hog, n_species, prot_store, cds_store, workdir,
         "Status": status,
         "Reason": reason,
     })
+    row["_tree"] = codon_tree or prot_tree   # representative tree (for plotting)
     return row
+
+
+# ---------------------------------------------------------------------------
+# Tree plotting
+# ---------------------------------------------------------------------------
+
+def plot_gene_tree(tree_path, out_png, title=""):
+    """
+    Render a gene tree (Newick, with bootstrap support) to PNG using Biopython +
+    matplotlib (headless). Returns the path, or None if it could not be drawn.
+    """
+    if not tree_path or not os.path.exists(tree_path):
+        return None
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from Bio import Phylo
+    except Exception:
+        return None
+    try:
+        tree = Phylo.read(tree_path, "newick")
+    except Exception:
+        return None
+    n_tips = tree.count_terminals()
+    fig = plt.figure(figsize=(7, max(2.5, 0.4 * n_tips)))
+    ax = fig.add_subplot(1, 1, 1)
+    try:
+        Phylo.draw(tree, do_show=False, axes=ax,
+                   show_confidence=True, branch_labels=None)
+    except Exception:
+        plt.close(fig)
+        return None
+    ax.set_title(title)
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=150)
+    plt.close(fig)
+    return out_png
 
 
 # ---------------------------------------------------------------------------
@@ -593,6 +632,20 @@ def run(hogsfile, fasta_dir, outdir, prefix="", cds_dir=None, species_tree=None,
                 species_tree, mafft_path, raxml_path,
                 prot_model, codon_model, bs_trees))
 
+    # Render one representative gene tree per compartment so the clustering can be
+    # eyeballed (core / shell; private has no tree).
+    plots = {}
+    for comp in ("core", "shell"):
+        rep = next((r for r in rows
+                    if r.get("Compartment") == comp and r.get("_tree")), None)
+        if rep:
+            png = os.path.join(tree_dir, f"{prefix}genetree_{comp}_example.png")
+            if plot_gene_tree(rep["_tree"], png,
+                              title=f"{comp.capitalize()} example: {rep['HOG']} "
+                                    f"[{rep.get('Status', '')}]"):
+                plots[comp] = png
+                print(f"[INFO] Saved {comp} example gene-tree plot -> {png}")
+
     out_tsv = os.path.join(outdir, f"{prefix}genetree_validation.tsv")
     if writer is None:
         os.makedirs(outdir, exist_ok=True)
@@ -607,4 +660,4 @@ def run(hogsfile, fasta_dir, outdir, prefix="", cds_dir=None, species_tree=None,
         ("REVIEW", "Conflict", "Redundant")))
     print(f"[INFO] Saved gene-tree validation -> {out_tsv} "
           f"({len(rows)} HOGs, {n_review} flagged)")
-    return {"table": out_tsv, "tree_dir": tree_dir, "rows": rows}
+    return {"table": out_tsv, "tree_dir": tree_dir, "rows": rows, "plots": plots}

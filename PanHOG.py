@@ -393,6 +393,50 @@ def extract_private_genes(gt_hogs_file, outdir=None, prefix=""):
             summary_out.write(f"{sp}\t{len(private_genes[sp])}\n")
     print(f"[INFO] Wrote '{summary_file}' with total private genes per species.")
 
+
+def extract_compartment_genes_per_species(hogs_file, compartment, outdir, prefix=""):
+    """
+    Write per-sample views of a compartment (core / single-copy / shell): for each
+    accession, the HOGs in which it is present and the genes it contributes.
+
+    Outputs (per species ``sp``):
+      <prefix><compartment>_HOGs_<sp>.tsv   HOG rows where <sp> has a gene
+      <prefix><compartment>_genes_<sp>.txt  <sp>'s genes in this compartment
+    plus <prefix><compartment>_gene_counts.txt (per-species totals).
+    """
+    if not os.path.exists(hogs_file):
+        print(f"[INFO] {compartment} HOGs file not found: {hogs_file}. Skipping per-sample split.")
+        return
+    with open(hogs_file) as f:
+        lines = [x.rstrip("\n") for x in f if x.strip()]
+    if len(lines) < 2:
+        print(f"[INFO] No {compartment} HOGs to split per sample.")
+        return
+    header = lines[0].split("\t")
+    species_list = header[1:]
+    sp_hog_lines = {sp: [] for sp in species_list}
+    sp_genes = {sp: [] for sp in species_list}
+    for line in lines[1:]:
+        sp_cols = line.split("\t")[1:]
+        for i, val in enumerate(sp_cols):
+            if i < len(species_list) and val.strip():
+                sp = species_list[i]
+                sp_hog_lines[sp].append(line)
+                sp_genes[sp].extend(g.strip() for g in val.split(",") if g.strip())
+    for sp in species_list:
+        with open(os.path.join(outdir, f"{prefix}{compartment}_HOGs_{sp}.tsv"), "w") as fout:
+            fout.write("\t".join(header) + "\n")
+            for hl in sp_hog_lines[sp]:
+                fout.write(hl + "\n")
+        with open(os.path.join(outdir, f"{prefix}{compartment}_genes_{sp}.txt"), "w") as fout:
+            for g in sp_genes[sp]:
+                fout.write(g + "\n")
+    with open(os.path.join(outdir, f"{prefix}{compartment}_gene_counts.txt"), "w") as fout:
+        fout.write(f"Species\t{compartment.replace('-', '_').capitalize()}GeneCount\n")
+        for sp in species_list:
+            fout.write(f"{sp}\t{len(sp_genes[sp])}\n")
+    print(f"[INFO] Wrote per-sample {compartment} files for {len(species_list)} species.")
+
 ##################################################
 # Build a pan-proteome (merging all categories)
 ##################################################
@@ -597,13 +641,16 @@ def generate_random_hog_matrix(dGeneNumbers, dSpecies, outdir, prefix, n_hogs=10
         selected_hogs = random.sample(all_hogs, n_hogs)
 
     matrix_data = []
-    species_names = [dSpecies[i] for i in sorted(dSpecies.keys())]
+    sorted_keys = sorted(dSpecies.keys())
+    species_names = [dSpecies[i] for i in sorted_keys]
 
     for hog_id in selected_hogs:
         counts = dGeneNumbers[hog_id]
         col_data = []
-        for i in sorted(dSpecies.keys()):
-            c = counts[i] if i < len(counts) else 0
+        # counts is 0-based; map each species key to its position (species indices
+        # start at 3, so counts[key] would mis-read / zero the last species).
+        for pos, i in enumerate(sorted_keys):
+            c = counts[pos] if pos < len(counts) else 0
             if c == 0:
                 val = 0
             elif c == 1:
@@ -1210,7 +1257,9 @@ def analyze_phylogeny(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix,
         return
 
     print(f"\n[INFO] Starting phylogeny-aware analysis using {species_tree_file}...")
-    panhog_phylo.analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix,
+    phylo_dir = os.path.join(outdir, "phylogeny_weighted")
+    os.makedirs(phylo_dir, exist_ok=True)
+    panhog_phylo.analyze(dGeneNumbers, dSpecies, species_tree_file, phylo_dir, prefix,
                          pan_weighted=pan_weighted,
                          pan_weighted_core=pan_weighted_core,
                          pan_weighted_private=pan_weighted_private)
@@ -1618,6 +1667,12 @@ def main():
         panhog_classification_dir,
         prefix
     )
+    # Per-sample views of the other compartments (core / single-copy / shell), so
+    # each accession's core and shell HOGs/genes are available like the private ones.
+    for _comp in ("core", "single-copy", "shell"):
+        extract_compartment_genes_per_species(
+            os.path.join(panhog_classification_dir, f"{prefix}{_comp}.HOGs.tsv"),
+            _comp, panhog_classification_dir, prefix)
 
     if args.proteome is not None:
         if proteome_filter is None:
@@ -1673,8 +1728,10 @@ def main():
         else:
             hog_ids = ([h.strip() for h in args.gene_tree_hogs.split(",") if h.strip()]
                        if args.gene_tree_hogs else None)
+            phylo_dir = os.path.join(outdir, "phylogeny_weighted")
+            os.makedirs(phylo_dir, exist_ok=True)
             panhog_genetrees.run(
-                hogsfile=args.hog, fasta_dir=fasta_dir, outdir=outdir, prefix=prefix,
+                hogsfile=args.hog, fasta_dir=fasta_dir, outdir=phylo_dir, prefix=prefix,
                 cds_dir=args.cds, species_tree=args.species_tree,
                 per_class=args.gene_trees_per_class, hog_ids=hog_ids,
                 mafft_path=args.mafft_path, raxml_path=args.raxml_ng_path,
