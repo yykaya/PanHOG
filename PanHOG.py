@@ -505,6 +505,11 @@ def generate_summary_stats(dGeneNumbers, ddHOGs, dSpecies, outdir, prefix):
 
     stats = defaultdict(lambda: defaultdict(int))
     total_species = len(dSpecies)
+    # dGeneNumbers vectors are stored in sorted-species-index order, so map each
+    # species column index (e.g. 3..14) to its 0-based position in that vector.
+    # (Without this, species after the first were mis-read and the last ones
+    # zeroed — an off-by-index bug in the per-species counts.)
+    pos_of = {k: i for i, k in enumerate(sorted(dSpecies.keys()))}
 
     for hog_id, counts in dGeneNumbers.items():
         category = None
@@ -519,7 +524,8 @@ def generate_summary_stats(dGeneNumbers, ddHOGs, dSpecies, outdir, prefix):
 
         if category:
             for idx, sp_name in dSpecies.items():
-                gene_count = counts[idx] if idx < len(counts) else 0
+                p = pos_of[idx]
+                gene_count = counts[p] if p < len(counts) else 0
                 if gene_count > 0:
                     stats[sp_name][f"{category}_HOG_Count"] += 1
                     stats[sp_name][f"{category}_Gene_Count"] += gene_count
