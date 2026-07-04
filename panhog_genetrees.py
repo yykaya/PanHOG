@@ -656,8 +656,20 @@ def run(hogsfile, fasta_dir, outdir, prefix="", cds_dir=None, species_tree=None,
     else:
         writer(rows, out_tsv)
 
-    n_review = sum(1 for r in rows if str(r.get("Status", "")).startswith(
-        ("REVIEW", "Conflict", "Redundant")))
+    # Flagged HOGs: gene tree conflicts with / can't confirm the ortholog grouping —
+    # the ones to be careful about when interpreting the compartment.
+    flagged = [r for r in rows if str(r.get("Status", "")).startswith(
+        ("REVIEW", "Conflict", "Redundant"))]
+    flagged_tsv = os.path.join(outdir, f"{prefix}genetree_flagged.tsv")
+    if writer is None:
+        with open(flagged_tsv, "w") as fh:
+            fh.write("\t".join(_COLS) + "\n")
+            for r in flagged:
+                fh.write("\t".join(str(r.get(c, "")) for c in _COLS) + "\n")
+    else:
+        writer(flagged, flagged_tsv)
+
     print(f"[INFO] Saved gene-tree validation -> {out_tsv} "
-          f"({len(rows)} HOGs, {n_review} flagged)")
-    return {"table": out_tsv, "tree_dir": tree_dir, "rows": rows, "plots": plots}
+          f"({len(rows)} HOGs, {len(flagged)} flagged -> {flagged_tsv})")
+    return {"table": out_tsv, "flagged": flagged_tsv, "tree_dir": tree_dir,
+            "rows": rows, "plots": plots}

@@ -500,9 +500,14 @@ def analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix, writer=No
         paths["weighted"] = os.path.join(outdir, f"{prefix}hog_pd_weighted_class.tsv")
         paths["clade"] = os.path.join(outdir, f"{prefix}clade_compartments.tsv")
         paths["confidence"] = os.path.join(outdir, f"{prefix}classification_confidence.tsv")
+        paths["reclassified"] = os.path.join(outdir, f"{prefix}reclassified_HOGs.tsv")
         writer(w_rows, paths["weighted"])
         writer(c_rows, paths["clade"])
         writer(conf_rows, paths["confidence"])
+        # Just the HOGs whose compartment changed under PD-weighting (the ones to
+        # look at when the count and the phylogeny disagree).
+        writer([r for r in conf_rows if r["Agreement"] == "Reclassified"],
+               paths["reclassified"])
         print(f"[INFO] Saved PD-weighted class-> {paths['weighted']} "
               f"(core={w_counts['core']}, shell={w_counts['shell']}, "
               f"private={w_counts['private']})")
@@ -514,4 +519,79 @@ def analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix, writer=No
               f"{len(conf_rows) - n_same} reclassified; "
               f"top: {dict(transitions.most_common(3))})")
 
+    _write_phylo_readme(outdir, prefix, pan_weighted)
     return paths
+
+
+def _write_phylo_readme(outdir, prefix, pan_weighted):
+    """Write a README explaining every file in the phylogeny_weighted directory."""
+    p = prefix
+    lines = f"""# phylogeny_weighted/ — how to read these files
+
+Phylogeny-aware layer on top of the frequency-based --pan classification. It asks
+WHERE on the species tree each HOG sits and HOW MUCH of the tree it spans.
+
+## {p}hog_lca_analysis.tsv
+One row per HOG mapped onto the species tree.
+  HOG           orthogroup id
+  Num_Species   number of carrier accessions
+  LCA_Node      lowest common ancestor node (postorder-named N0..Nk) of all carriers
+  PD_Fraction   Faith's phylogenetic diversity the carriers span, as a FRACTION of
+                the tree's total branch length. Range 0..1 (see below).
+  Species_List  the carrier accessions
+
+## PD_Fraction — what the number means (0 -> 1)
+It is NOT the compartment; it is the share of the tree's total branch length that the
+carrier tips collectively cover:
+  * 1.0  carriers reach every corner of the tree  (e.g. a true core gene)
+  * ~0   carriers are one tip, or tips sitting on ZERO-length branches
+The PD-weighted class is then thresholded on it:
+  PD_Fraction >= {{core_thr}}  -> core     (spans (almost) the whole tree)
+  PD_Fraction <= {{priv_thr}}  -> private  (spans (almost) nothing)
+  in between            -> shell
+Two HOGs with the SAME Num_Species can get DIFFERENT PD_Fraction: 2 deeply divergent
+accessions span more branch length than 2 sister accessions. That is the whole point
+of weighting by phylogeny instead of by a raw count.
+Edge case: a HOG in 2 accessions whose tips are on zero-length branches has
+PD_Fraction = 0.0 and is called 'private' even though Num_Species = 2 (it adds no
+phylogenetic breadth).
+
+## {p}hog_pd_weighted_class.tsv
+  HOG, Num_Species, PD_Fraction, Weighted_Class (core/shell/private by the thresholds).
+
+## {p}classification_confidence.tsv
+Frequency-based vs PD-weighted compartment, per HOG:
+  Flat_Class     core = all accessions, private = 1, else shell
+  Weighted_Class the PD-weighted class
+  Agreement      Same | Reclassified
+  Change         e.g. shell->core when they disagree
+'Same' rows are HIGH-CONFIDENCE compartment calls; 'Reclassified' rows are where the
+count and the phylogeny disagree -- inspect those.
+
+## {p}reclassified_HOGs.tsv
+Just the 'Reclassified' rows above (the ones to look at).
+
+## {p}clade_compartments.tsv
+For every internal node, core/shell/private tallied WITHIN that clade's own tips
+(Num_Tips, Clade_Core/Shell/Private, HOGs_Present).
+
+## {p}phylo_node_summary.tsv
+Dollo gain/loss per branch: HOGs_LCA (origins), Gains, Losses per node.
+
+## {p}species_tree_annotated.nwk
+Species tree with internal-node names (N0..Nk) matching LCA_Node / node summary.
+
+## {p}genetree_validation.tsv + gene_trees/
+Per-HOG gene-tree validation (protein + codon ML trees) with a Status
+(Confirmed / Redundant / Conflict / Low-signal). 'Conflict' = the HOG's own gene tree
+is well supported but disagrees with the species tree -> members are probably NOT
+clean orthologs; be careful using this HOG. gene_trees/ holds the trees + example
+plots. See {p}genetree_flagged.tsv for just the flagged HOGs.
+"""
+    # Fill thresholds only if PD-weighting was run (else leave the section generic).
+    lines = lines.replace("{{core_thr}}", "core_threshold").replace("{{priv_thr}}", "private_threshold")
+    try:
+        with open(os.path.join(outdir, "README.md"), "w") as fh:
+            fh.write(lines)
+    except OSError:
+        pass

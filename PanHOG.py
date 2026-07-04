@@ -482,6 +482,18 @@ def plot_genevar_heatmap(dGeneNumbers, dSpecies, coreHOGs, shellHOGs, gtHOGs,
     data_matrix = [dGeneNumbers[h] for h in hog_ids]
     df = pd.DataFrame(data_matrix, index=hog_ids, columns=sp_order)
 
+    # Annotation-bias check: if some accessions carry far more gene copies than the
+    # rest, the copy-number heatmap reflects the ANNOTATION METHOD (e.g. reference
+    # lift-over vs de-novo), not true copy-number variation.
+    means = df.mean(axis=0)
+    if len(means) > 2 and means.max() > 1.8 * means.median():
+        hi = [s for s in means.index if means[s] > 1.8 * means.median()]
+        print(f"[WARNING] Copy-number heatmap: {', '.join(hi)} have a much higher mean "
+              f"copy number ({means.max():.2f}) than the others (median {means.median():.2f}). "
+              f"This usually reflects a different annotation method (reference lift-over "
+              f"vs de-novo) rather than biology — interpret with care and consider "
+              f"per-HOG normalisation (--zscore).")
+
     if genevar_filter:
         keep_cols = [c for c in df.columns if c in genevar_filter]
         df = df[keep_cols]
