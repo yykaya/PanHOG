@@ -20,6 +20,7 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 #### Fixes
 
 - **Correct Ka/Ks (dN/dS)**: The previous built-in Nei-Gojobori routine counted synonymous/non-synonymous *sites* with arbitrary constants and only on differing codons, producing uninterpretable values. dN/dS is now delegated to validated engines, and undefined quantities are reported as `NaN` instead of fabricated numbers.
+- **⚠ Per-HOG dN/dS estimator — do not use the mean of ratios**: the per-HOG `dN_dS` is now the **ratio of means**, mean(dN)/mean(dS). The earlier per-HOG value averaged the *per-pair* dN/dS ratios, which is dominated by any pair whose dS is near zero (dS → 0 sends a ratio to infinity, and PAML `codeml` caps ω at 99), so it grossly **over-estimates** per-HOG dN/dS and makes engines look inconsistent when they agree per pair. The mean-of-ratios value is retained only as `dN_dS_mean_of_ratios` for transparency. **Recommended default: engine `biopython` NG86 (fast) or `codeml` (validated), summarised by the ratio of means.**
 - **Modern BioPython compatibility**: Importing the removed `Bio.Blast.Applications.NcbiblastpCommandline` disabled *all* BioPython features (Ka/Ks, phylogeny, supermatrix, annotation) on BioPython ≥ 1.85. Core imports are now separated and BLASTP runs via subprocess.
 - **Packaging**: `panhog_dnds` now ships with the package (the installed `panhog` command could not previously import the Ka/Ks engine); the duplicate top-level `meta.yaml` was removed and generated build artifacts are no longer tracked.
 
@@ -29,7 +30,8 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 - **Pairwise dN/dS output**: writes both a per-HOG summary (`kaks_results_<type>.tsv`) and a per-pair table (`kaks_pairwise_<type>.tsv`); `--reference` restricts pairs to reference-species-vs-rest.
 - **Phylogeny-aware analysis (`--species-tree`)**: deterministic internal-node naming and an annotated Newick tree, species/tip validation, HOG→LCA mapping with a Faith's phylogenetic-diversity (PD) fraction, and **Dollo-parsimony gain/loss reconstruction** with per-branch gene-family gain/loss counts.
 - **Gene-tree validation of compartment calls (`--gene-trees`)**: by default builds a per-HOG **protein** ML tree (MAFFT → RAxML-NG; peptides are always available). When `--cds` is supplied it also builds a **codon (CDS) tree**, which is **better resolved at shallow pangenome divergence** (~3× the sites plus synonymous variation that protein alignments cannot see) and is then used as the primary arbiter. The trees are compared and each HOG is scored for divergence, bootstrap support and species-tree concordance (normalised Robinson-Foulds), yielding a status: **Confirmed / Redundant / Conflict / Low-signal**. **Private genes** (no tree possible) are validated by **BLAST** against every other accession — a strong hit elsewhere means a likely missed ortholog, not a truly private gene. Accession-labelled tips prevent shared gene IDs from colliding.
-- **Test suite**: `pytest` tests covering the dN/dS engine, the Ka/Ks pipeline end-to-end, the phylogeny module, and gene-tree validation.
+- **Compartment Ka/Ks comparison (`--kaks-compartments N`)**: samples N HOGs per compartment (core / shell / private), computes a per-HOG dN/dS (ratio of means) from codon alignments (requires `--cds`), writes a per-HOG table, and draws a **box plot** of the distributions with a Kruskal–Wallis test — the classic pangenome pattern of core genes under the strongest purifying selection. (Single-copy private genes have no pair, so private uses *paralog* dN/dS where available — interpret separately.)
+- **Test suite**: `pytest` tests covering the dN/dS engine, the Ka/Ks pipeline end-to-end, the phylogeny module, gene-tree validation, and compartment Ka/Ks.
 
 ### [v0.2.0] - 2026-02-27
 
@@ -90,6 +92,7 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 | Count Matrix | `--matrix` | Gene copy number matrix |
 | Functional Annotation | `--funano` | BLAST-based annotation against UniProt |
 | Ka/Ks (dN/dS) Analysis | `--kaks` | Codon-based selection analysis (biopython / PAML codeml / KaKs_Calculator) |
+| Compartment Ka/Ks | `--kaks-compartments N` | Box plot of per-HOG dN/dS across core/shell/private (Kruskal–Wallis) |
 | Phylogeny-aware Analysis | `--species-tree` | HOG→LCA + PD fraction + Dollo gain/loss on the species tree |
 | Gene-tree Validation | `--gene-trees` | Per-HOG protein + codon ML trees (MAFFT + RAxML-NG) + private-gene BLAST to validate core/shell/private calls |
 | Supermatrix | `--supermatrix` | Concatenated single-copy orthologs for phylogenomics |
@@ -244,6 +247,8 @@ pangenehog --hog N0.tsv --fasta ./peptides/ --pan -o results/
 | `--gene-tree-codon-model` | RAxML-NG **codon/nucleotide** model (codon tree is built when `--cds` is given). | `GTR+G` |
 | `--gene-tree-bs` | Bootstrap replicates per gene tree. | `100` |
 | `--raxml-ng-path` | Path to the RAxML-NG executable. | `raxml-ng` |
+| `--kaks-compartments` | Sample N HOGs per compartment and box-plot per-HOG dN/dS (needs `--cds`). Writes `kaks_by_compartment.tsv` + `.png/.pdf/.svg`. | `0` (off) |
+| `--kaks-compartments-maxseqs` | Skip HOGs with more sequences than this in `--kaks-compartments`. | `12` |
 | `--supermatrix` | Generate supermatrix from single-copy orthologs. | `False` |
 
 ### Tool Paths

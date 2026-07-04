@@ -15,11 +15,12 @@ setup(
     author="Yasin Kaya",
     author_email="yyasinkkaya@gmail.com",
 
-    # panhog_dnds, panhog_phylo and panhog_genetrees are imported by PanHOG at
-    # runtime and MUST ship with the package, otherwise the installed `panhog`
-    # console script cannot run the Ka/Ks (dN/dS), phylogeny-aware, or gene-tree
-    # validation analyses.
-    py_modules=["PanHOG", "PangeneHOG", "panhog_dnds", "panhog_phylo", "panhog_genetrees"],
+    # These helper modules are imported by PanHOG at runtime and MUST ship with
+    # the package, otherwise the installed `panhog` console script cannot run the
+    # Ka/Ks (dN/dS), phylogeny-aware, gene-tree validation, or compartment Ka/Ks
+    # analyses.
+    py_modules=["PanHOG", "PangeneHOG", "panhog_dnds", "panhog_phylo",
+                "panhog_genetrees", "panhog_kaks_compartments"],
 
     entry_points={
         'console_scripts': [

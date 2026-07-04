@@ -37,6 +37,8 @@ results/
 /genetree_run/
 /cli_gt/
 /gtv/
+/scaled_gt/
+/kaks_comp/
 /validation_data/
 *.log
 *.raxml.*

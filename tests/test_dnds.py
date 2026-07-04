@@ -103,6 +103,20 @@ def test_summarize_hog_ignores_nans():
     assert s["n_pairs"] == 2
 
 
+def test_summarize_hog_uses_ratio_of_means_not_mean_of_ratios():
+    # One pair has a near-zero dS, which blows its per-pair ratio up. The robust
+    # per-HOG dN_dS (ratio of means) must stay sane; the mean of ratios must not
+    # be used as the primary value.
+    rows = [
+        {"dN": 0.02, "dS": 0.20, "dN_dS": 0.10},
+        {"dN": 0.02, "dS": 0.001, "dN_dS": 20.0},
+    ]
+    s = pd.summarize_hog(rows)
+    assert s["dN_dS"] == pytest.approx(0.02 / 0.1005, abs=1e-3)   # ratio of means
+    assert s["dN_dS"] < 1                                          # sane
+    assert s["dN_dS_mean_of_ratios"] == pytest.approx(10.05, abs=0.1)  # kept, but not used
+
+
 def test_available_models_reports_scipy_state():
     models = pd.available_models()
     assert "NG86" in models and "LWL85" in models

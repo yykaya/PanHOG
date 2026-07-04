@@ -59,6 +59,12 @@ try:
 except ImportError:
     HAS_GENETREES = False
 
+try:
+    import panhog_kaks_compartments
+    HAS_KAKS_COMPARTMENTS = True
+except ImportError:
+    HAS_KAKS_COMPARTMENTS = False
+
 ##############################
 # Configuration Loading
 ##############################
@@ -1440,6 +1446,13 @@ def main():
                         help="Bootstrap replicates per gene tree for --gene-trees (default: 100).")
     parser.add_argument("--raxml-ng-path", type=str, default="raxml-ng",
                         help="Path to the RAxML-NG executable (for --gene-trees).")
+    parser.add_argument("--kaks-compartments", type=int, default=0, metavar="N",
+                        help="Compare codon dN/dS across compartments: sample N HOGs per "
+                             "compartment (core/shell/private), compute per-HOG dN/dS "
+                             "(ratio of means), and draw a box plot. Requires --cds. (0 = off)")
+    parser.add_argument("--kaks-compartments-maxseqs", type=int, default=12,
+                        help="Skip HOGs with more than this many sequences in "
+                             "--kaks-compartments (keeps alignments fast; default: 12).")
 
     # Advanced options
     parser.add_argument("--aligner", type=str, default="mafft", choices=["mafft", "muscle"],
@@ -1647,6 +1660,20 @@ def main():
                 blastp_path=args.blastp_path, makeblastdb_path=args.makeblastdb_path,
                 prot_model=args.gene_tree_model, codon_model=args.gene_tree_codon_model,
                 bs_trees=args.gene_tree_bs)
+
+    if args.kaks_compartments and args.kaks_compartments > 0:
+        if not HAS_KAKS_COMPARTMENTS:
+            print("[ERROR] panhog_kaks_compartments module not found. Skipping.")
+        elif not args.cds:
+            print("[ERROR] --cds is required for --kaks-compartments. Skipping.")
+        else:
+            panhog_kaks_compartments.run(
+                hogsfile=args.hog, fasta_dir=fasta_dir, cds_dir=args.cds,
+                outdir=outdir, prefix=prefix,
+                per_compartment=args.kaks_compartments,
+                max_seqs=args.kaks_compartments_maxseqs,
+                method=args.kaks_method, model=args.kaks_model,
+                mafft_path=args.mafft_path)
 
     if args.supermatrix:
         if args.cds is None:

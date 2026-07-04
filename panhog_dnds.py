@@ -276,8 +276,17 @@ def dnds_from_alignment(records, method="biopython", model="NG86",
 
 def summarize_hog(rows):
     """
-    Collapse per-pair rows for one HOG into a mean summary, ignoring NaNs.
-    Returns dict with mean dN, dS, dN/dS and the number of valid pairs.
+    Collapse per-pair rows for one HOG into a summary, ignoring NaNs.
+
+    The reported per-HOG ``dN_dS`` is the **ratio of means**, mean(dN) / mean(dS)
+    — the statistically sound per-HOG estimator. A naive **mean of the per-pair
+    dN/dS ratios** is dominated by pairs whose dS is near zero (dS → 0 sends the
+    ratio to infinity, and codeml caps it at 99), so it grossly over-estimates
+    the per-HOG value and must not be used; it is returned separately as
+    ``dN_dS_mean_of_ratios`` for transparency only.
+
+    Returns: mean ``dN``, mean ``dS``, ``dN_dS`` (ratio of means),
+    ``dN_dS_mean_of_ratios``, and ``n_pairs`` (valid pairs).
     """
     def _mean(vals):
         good = [v for v in vals if isinstance(v, float) and not math.isnan(v)]
@@ -287,11 +296,13 @@ def summarize_hog(rows):
     dS = _mean([r["dS"] for r in rows])
     ratios = [r["dN_dS"] for r in rows]
     good_ratio = [v for v in ratios if isinstance(v, float) and not math.isnan(v)]
+    ratio_of_means = (dN / dS) if (not math.isnan(dS) and dS > 0
+                                   and not math.isnan(dN)) else float("nan")
+    mean_of_ratios = (sum(good_ratio) / len(good_ratio)) if good_ratio else float("nan")
     return {
         "dN": dN,
         "dS": dS,
-        "dN_dS": (sum(good_ratio) / len(good_ratio)) if good_ratio else (
-            dN / dS if not math.isnan(dS) and dS > 0 else float("nan")
-        ),
+        "dN_dS": ratio_of_means,
+        "dN_dS_mean_of_ratios": mean_of_ratios,
         "n_pairs": len(good_ratio),
     }
