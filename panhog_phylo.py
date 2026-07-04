@@ -268,6 +268,109 @@ def gain_loss_table(tree, presence, below=None):
 
 
 # ---------------------------------------------------------------------------
+# Tier 2.1: phylogenetic-diversity-weighted core / shell / private
+# ---------------------------------------------------------------------------
+
+def pd_weighted_classification(tree, presence, core_threshold=0.9,
+                               private_threshold=0.1, below=None, total_bl=None):
+    """
+    Classify each HOG by the fraction of total tree branch length its carrier
+    species span (Faith's PD fraction) instead of by a flat species count.
+
+    A HOG whose carriers span >= ``core_threshold`` of the tree is ``core``, one
+    that spans <= ``private_threshold`` is ``private``, and anything between is
+    ``shell``. This up-weights HOGs spread across deep, divergent lineages and
+    down-weights those confined to a few closely related tips, so a HOG in two
+    distant clades is not treated the same as one in two sister tips.
+
+    Returns (rows, counts):
+      rows   : list of dicts (HOG, Num_Species, PD_Fraction, Weighted_Class)
+      counts : {'core': n, 'shell': n, 'private': n}
+    """
+    if below is None:
+        below = tips_below(tree)
+    if total_bl is None:
+        total_bl = total_branch_length(tree)
+    tip_by_name = {t.name: t for t in tree.get_terminals()}
+
+    rows = []
+    counts = {"core": 0, "shell": 0, "private": 0}
+    for hog, present in presence.items():
+        present = [s for s in present if s in tip_by_name]
+        if not present:
+            continue
+        frac = pd_fraction(tree, present, below, total_bl)
+        if frac >= core_threshold:
+            cls = "core"
+        elif frac <= private_threshold:
+            cls = "private"
+        else:
+            cls = "shell"
+        counts[cls] += 1
+        rows.append({
+            "HOG": hog,
+            "Num_Species": len(present),
+            "PD_Fraction": round(frac, 4),
+            "Weighted_Class": cls,
+        })
+    return rows, counts
+
+
+# ---------------------------------------------------------------------------
+# Tier 2.2: clade-conditioned compartments
+# ---------------------------------------------------------------------------
+
+def clade_compartments(tree, presence, below=None, min_clade_size=2):
+    """
+    For every internal node (clade), classify each HOG's occupancy *within that
+    clade's own tip set* and tally clade-core / clade-shell / clade-private.
+
+    For a clade with ``k`` tips, a HOG carried by ``c`` of those tips is:
+      * clade-core    if c == k   (present across the whole clade)
+      * clade-private if c == 1   (a single tip within the clade)
+      * clade-shell   if 1 < c < k
+    HOGs absent from the clade (c == 0) are not counted for that clade.
+
+    Returns rows: list of dicts
+      (Node, Num_Tips, Clade_Core, Clade_Shell, Clade_Private, HOGs_Present)
+    one per internal node with at least ``min_clade_size`` tips.
+    """
+    if below is None:
+        below = tips_below(tree)
+    carriers = {hog: set(sps) for hog, sps in presence.items()}
+
+    rows = []
+    for clade in tree.find_clades(order="postorder"):
+        if clade.is_terminal():
+            continue
+        clade_tips = below[id(clade)]
+        k = len(clade_tips)
+        if k < min_clade_size:
+            continue
+        core = shell = private = present_total = 0
+        for present in carriers.values():
+            c = len(clade_tips & present)
+            if c == 0:
+                continue
+            present_total += 1
+            if c == k:
+                core += 1
+            elif c == 1:
+                private += 1
+            else:
+                shell += 1
+        rows.append({
+            "Node": clade.name if clade.name else "root",
+            "Num_Tips": k,
+            "Clade_Core": core,
+            "Clade_Shell": shell,
+            "Clade_Private": private,
+            "HOGs_Present": present_total,
+        })
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -285,11 +388,16 @@ def presence_from_gene_numbers(dGeneNumbers, dSpecies):
     return presence
 
 
-def analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix, writer=None):
+def analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix, writer=None,
+            pan_weighted=False, pan_weighted_core=0.9, pan_weighted_private=0.1):
     """
     Run the full phylogeny-aware analysis and write output tables + an annotated
     tree. ``writer`` is an optional callable(df, path) for TSV output; when None
     a pandas-based writer is used. Returns a dict of output file paths.
+
+    When ``pan_weighted`` is True, also writes a phylogenetic-diversity-weighted
+    core/shell/private classification (thresholds ``pan_weighted_core`` /
+    ``pan_weighted_private``) and a per-clade compartment table.
     """
     if not HAS_BIOPYTHON:
         print("[ERROR] Biopython is required for phylogenetic analysis. Skipping.")
@@ -361,4 +469,19 @@ def analyze(dGeneNumbers, dSpecies, species_tree_file, outdir, prefix, writer=No
     print(f"[INFO] Saved annotated tree  -> {paths['tree']}")
     print(f"[INFO] Dollo reconstruction: {total_gains} gains, {total_losses} losses "
           f"across {len(tree.get_nonterminals())} internal nodes.")
+
+    if pan_weighted:
+        w_rows, w_counts = pd_weighted_classification(
+            tree, presence, pan_weighted_core, pan_weighted_private, below)
+        c_rows = clade_compartments(tree, presence, below)
+        paths["weighted"] = os.path.join(outdir, f"{prefix}hog_pd_weighted_class.tsv")
+        paths["clade"] = os.path.join(outdir, f"{prefix}clade_compartments.tsv")
+        writer(w_rows, paths["weighted"])
+        writer(c_rows, paths["clade"])
+        print(f"[INFO] Saved PD-weighted class-> {paths['weighted']} "
+              f"(core={w_counts['core']}, shell={w_counts['shell']}, "
+              f"private={w_counts['private']})")
+        print(f"[INFO] Saved clade compartments-> {paths['clade']} "
+              f"({len(c_rows)} clades)")
+
     return paths

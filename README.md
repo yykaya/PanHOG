@@ -29,8 +29,9 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 - **dN/dS engines (`--kaks-method`)**: `biopython` (via `Bio.codonalign`, with `--kaks-model` NG86/LWL85/YN00/ML), `codeml` (PAML pairwise, `runmode -2`), or `kakscalculator`. The `codeml` engine falls back to the built-in engine if the executable is absent.
 - **Pairwise dN/dS output**: writes both a per-HOG summary (`kaks_results_<type>.tsv`) and a per-pair table (`kaks_pairwise_<type>.tsv`); `--reference` restricts pairs to reference-species-vs-rest.
 - **Phylogeny-aware analysis (`--species-tree`)**: deterministic internal-node naming and an annotated Newick tree, species/tip validation, HOG→LCA mapping with a Faith's phylogenetic-diversity (PD) fraction, and **Dollo-parsimony gain/loss reconstruction** with per-branch gene-family gain/loss counts.
+- **PD-weighted & clade-conditioned classification (`--pan-weighted`)**: classify each HOG as core/shell/private by the fraction of total tree branch length its carriers span (thresholds `--pan-weighted-core` / `--pan-weighted-private`), and tally clade-core/shell/private compartments within every internal-node subtree.
 - **Gene-tree validation of compartment calls (`--gene-trees`)**: by default builds a per-HOG **protein** ML tree (MAFFT → RAxML-NG; peptides are always available). When `--cds` is supplied it also builds a **codon (CDS) tree**, which is **better resolved at shallow pangenome divergence** (~3× the sites plus synonymous variation that protein alignments cannot see) and is then used as the primary arbiter. The trees are compared and each HOG is scored for divergence, bootstrap support and species-tree concordance (normalised Robinson-Foulds), yielding a status: **Confirmed / Redundant / Conflict / Low-signal**. **Private genes** (no tree possible) are validated by **BLAST** against every other accession — a strong hit elsewhere means a likely missed ortholog, not a truly private gene. Accession-labelled tips prevent shared gene IDs from colliding.
-- **Compartment Ka/Ks comparison (`--kaks-compartments N`)**: samples N HOGs per compartment (core / shell / private), computes a per-HOG dN/dS (ratio of means) from codon alignments (requires `--cds`), writes a per-HOG table, and draws a **box plot** of the distributions with a Kruskal–Wallis test — the classic pangenome pattern of core genes under the strongest purifying selection. (Single-copy private genes have no pair, so private uses *paralog* dN/dS where available — interpret separately.)
+- **Compartment Ka/Ks comparison (`--kaks-compartments N`)**: samples N HOGs per compartment (core / shell / private), computes a per-HOG dN/dS (ratio of means) from codon alignments (requires `--cds`), writes a per-HOG table, and draws a **box plot** of the distributions with a Kruskal–Wallis test — the classic pangenome pattern of core genes under the strongest purifying selection. `--reference <accession>` switches to reference-vs-rest ("<accession> Ka/Ks"). (Single-copy private genes have no pair, so private uses *paralog* dN/dS where available — interpret separately.)
 - **Test suite**: `pytest` tests covering the dN/dS engine, the Ka/Ks pipeline end-to-end, the phylogeny module, gene-tree validation, and compartment Ka/Ks.
 
 ### [v0.2.0] - 2026-02-27
@@ -94,6 +95,7 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 | Ka/Ks (dN/dS) Analysis | `--kaks` | Codon-based selection analysis (biopython / PAML codeml / KaKs_Calculator) |
 | Compartment Ka/Ks | `--kaks-compartments N` | Box plot of per-HOG dN/dS across core/shell/private (Kruskal–Wallis) |
 | Phylogeny-aware Analysis | `--species-tree` | HOG→LCA + PD fraction + Dollo gain/loss on the species tree |
+| PD-weighted Classification | `--pan-weighted` | Core/shell/private by PD fraction + per-clade compartments |
 | Gene-tree Validation | `--gene-trees` | Per-HOG protein + codon ML trees (MAFFT + RAxML-NG) + private-gene BLAST to validate core/shell/private calls |
 | Supermatrix | `--supermatrix` | Concatenated single-copy orthologs for phylogenomics |
 | Config File | `--config` | YAML-based configuration |
@@ -240,6 +242,9 @@ pangenehog --hog N0.tsv --fasta ./peptides/ --pan -o results/
 | `--backtrans` | Back-translation method: `naive` (built-in) or `pal2nal`. | `naive` |
 | `--reference` | Reference species for pairwise Ka/Ks analysis. | `None` |
 | `--species-tree` | Path to Newick species tree for phylogenetic LCA analysis. | `None` |
+| `--pan-weighted` | PD-weighted core/shell/private + per-clade compartments (needs `--species-tree`). Outputs `hog_pd_weighted_class.tsv` and `clade_compartments.tsv`. | `False` |
+| `--pan-weighted-core` | PD-fraction ≥ this ⇒ `core`. | `0.9` |
+| `--pan-weighted-private` | PD-fraction ≤ this ⇒ `private`. | `0.1` |
 | `--gene-trees` | Validate compartment calls with per-HOG ML gene trees (MAFFT + RAxML-NG). Writes `genetree_validation.tsv`. | `False` |
 | `--gene-trees-per-class` | Candidate HOGs per compartment for `--gene-trees`. | `3` |
 | `--gene-tree-hogs` | Comma-separated HOG IDs for `--gene-trees` (overrides auto selection). | `None` |
