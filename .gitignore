@@ -39,6 +39,7 @@ results/
 /gtv/
 /scaled_gt/
 /kaks_comp/
+/test_full/
 /validation_data/
 *.log
 *.raxml.*

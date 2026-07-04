@@ -59,8 +59,18 @@ def sample_by_compartment(occ, n_species, per_compartment=100,
 
 
 def hog_dnds(hog, occ_hog, prot_store, cds_store, workdir,
-             method="biopython", model="NG86", mafft_path="mafft"):
-    """Codon-align a HOG and return its robust per-HOG dN/dS (ratio of means), or None."""
+             method="biopython", model="NG86", mafft_path="mafft", reference=None):
+    """
+    Codon-align a HOG and return its robust per-HOG dN/dS (ratio of means), or None.
+
+    With ``reference`` (an accession name) only HOGs that contain the reference are
+    used, and dN/dS is computed **reference-vs-rest** — one value per reference gene
+    against its orthologs, matching a "<reference> Ka/Ks" analysis. (A private gene
+    unique to the reference then has no ortholog to compare against and is dropped,
+    which is the correct behaviour.)
+    """
+    if reference and reference not in occ_hog:
+        return None
     prot_fa = os.path.join(workdir, f"{hog}.faa")
     tip_map = gt.write_protein_fasta(occ_hog, prot_store, prot_fa)
     if len(tip_map) < 2:
@@ -71,7 +81,9 @@ def hog_dnds(hog, occ_hog, prot_store, cds_store, workdir,
     codon_recs = gt.backtranslate(gt.read_fasta(aln), tip_map, cds_store)
     if len(codon_recs) < 2:
         return None
-    rows = panhog_dnds.dnds_from_alignment(codon_recs, method=method, model=model)
+    species_of = {tip: acc for tip, (acc, _g) in tip_map.items()}
+    rows = panhog_dnds.dnds_from_alignment(codon_recs, method=method, model=model,
+                                           species_of=species_of, reference=reference)
     v = panhog_dnds.summarize_hog(rows)["dN_dS"]
     return v if isinstance(v, float) and not math.isnan(v) else None
 
@@ -132,10 +144,14 @@ def plot_compartment_dnds(data, outpath, pvalue=None, ymax=None):
 
 def run(hogsfile, fasta_dir, cds_dir, outdir, prefix="", per_compartment=100,
         max_seqs=12, method="biopython", model="NG86", mafft_path="mafft",
-        make_plot=True):
+        reference=None, make_plot=True):
     """
     Sample HOGs per compartment, compute per-HOG dN/dS, write a per-HOG table and
     a compartment box plot. Requires ``cds_dir`` (codon alignments).
+
+    With ``reference`` (an accession) dN/dS is reference-vs-rest — each retained
+    HOG contributes the selection on the reference gene against its orthologs
+    (a "<reference> Ka/Ks" analysis); otherwise all unordered pairs are used.
     """
     if not cds_dir:
         print("[ERROR] --cds is required for the compartment Ka/Ks comparison. Skipping.")
@@ -154,7 +170,7 @@ def run(hogsfile, fasta_dir, cds_dir, outdir, prefix="", per_compartment=100,
     for comp in ("core", "shell", "private"):
         for hog in buckets[comp]:
             v = hog_dnds(hog, occ[hog], prot_store, cds_store, workdir,
-                         method, model, mafft_path)
+                         method, model, mafft_path, reference=reference)
             if v is not None:
                 data[comp].append(v)
                 rows_out.append((hog, comp, v))

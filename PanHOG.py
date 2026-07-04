@@ -1673,7 +1673,7 @@ def main():
                 per_compartment=args.kaks_compartments,
                 max_seqs=args.kaks_compartments_maxseqs,
                 method=args.kaks_method, model=args.kaks_model,
-                mafft_path=args.mafft_path)
+                mafft_path=args.mafft_path, reference=args.reference)
 
     if args.supermatrix:
         if args.cds is None:
