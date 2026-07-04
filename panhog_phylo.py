@@ -546,9 +546,9 @@ carrier tips collectively cover:
   * 1.0  carriers reach every corner of the tree  (e.g. a true core gene)
   * ~0   carriers are one tip, or tips sitting on ZERO-length branches
 The PD-weighted class is then thresholded on it:
-  PD_Fraction >= {{core_thr}}  -> core     (spans (almost) the whole tree)
-  PD_Fraction <= {{priv_thr}}  -> private  (spans (almost) nothing)
-  in between            -> shell
+  PD_Fraction >= 0.9 (--pan-weighted-core)     -> core     (spans ~the whole tree)
+  PD_Fraction <= 0.1 (--pan-weighted-private)  -> private  (spans ~nothing)
+  in between                                   -> shell
 Two HOGs with the SAME Num_Species can get DIFFERENT PD_Fraction: 2 deeply divergent
 accessions span more branch length than 2 sister accessions. That is the whole point
 of weighting by phylogeny instead of by a raw count.
@@ -588,8 +588,6 @@ is well supported but disagrees with the species tree -> members are probably NO
 clean orthologs; be careful using this HOG. gene_trees/ holds the trees + example
 plots. See {p}genetree_flagged.tsv for just the flagged HOGs.
 """
-    # Fill thresholds only if PD-weighting was run (else leave the section generic).
-    lines = lines.replace("{{core_thr}}", "core_threshold").replace("{{priv_thr}}", "private_threshold")
     try:
         with open(os.path.join(outdir, "README.md"), "w") as fh:
             fh.write(lines)

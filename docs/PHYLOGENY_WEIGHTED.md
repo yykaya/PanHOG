@@ -78,4 +78,16 @@ probably **not clean orthologs** and the compartment call is suspect. The
 3. **Gene-tree `Conflict`** → flag/split regardless of count.
 4. **Private** → BLAST-validate (most are missed orthologs; see the guidance doc).
 
-See also `docs/CLASSIFICATION_GUIDANCE.md`.
+## "Be careful" lists — which HOGs to scrutinise
+- **`<prefix>reclassified_HOGs.tsv`** — HOGs whose compartment changed under
+  PD-weighting (mostly shell→core here).
+- **`<prefix>genetree_flagged.tsv`** — HOGs whose *own gene tree* conflicts with /
+  can't confirm the grouping (`Conflict` / `Redundant` / private `REVIEW`).
+- **`<prefix>flagged_HOGs_annotated.tsv`** — the flagged HOGs joined to their
+  **Swiss-Prot function** (BLAST), so you can see *what family* is problematic. On
+  this dataset the reclassified set is heavily enriched for **Pentatricopeptide-repeat
+  (PPR) proteins** — a large, CNV-rich, hard-to-orthology-cluster family: exactly the
+  kind of gene family whose pangenome grouping deserves manual review. (This join
+  requires functional annotation from `--funano` / a Swiss-Prot BLAST DB.)
+
+See also `docs/CLASSIFICATION_GUIDANCE.md` and `docs/HEATMAP_NORMALISATION.md`.
