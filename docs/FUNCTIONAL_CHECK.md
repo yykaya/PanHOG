@@ -26,7 +26,7 @@ Plus separate runs for `--kaks`/`--supermatrix` (subset) and `--funano` (private
 | Gene-variation heatmap | `--genevar` | ✅ | `genevar_heatmap.png` |
 | PAV / count matrices | `--pav` / `--matrix` | ✅ | `PAV.tsv`, `CountMatrix.tsv` |
 | Random HOG matrix | `--random-hog-matrix 500` | ✅ | `random_hog_matrix.png` |
-| Saturation curve | `--saturation` | ⏳ | (confirming) |
+| Saturation curve | `--saturation` | ✅ | `saturation_analysis.png/pdf/svg` — core drops ~7000→3,331, shell+private rises (open pangenome), bootstrapped |
 | Phylogeny-aware | `--species-tree` | ✅ | LCA + PD table, Dollo **11,031 gains / 25,220 losses** across 23 nodes, annotated Newick |
 | PD-weighted classification | `--pan-weighted` | ✅ | `hog_pd_weighted_class.tsv` (core **6,217** / shell 4,437 / private 377) + `clade_compartments.tsv` |
 | Gene-tree validation | `--gene-trees` (+`--cds`) | ✅ | protein+codon trees + status; private BLASTed |
