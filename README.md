@@ -6,75 +6,66 @@
   <img src="panhog.png" alt="PanHOG logo" width="480"/>
 </td>
 <td>
-A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologous Groups (HOGs) in pangenomic datasets. It's a flexible command-line toolkit for classifying HOGs across multiple genomes in a pangenome-aware, phylogeny-informed context. It supports core/shell/private gene classification, heatmap visualization, pan-proteome generation, functional annotation, saturation analysis, Ka/Ks selection analysis, phylogenetic LCA analysis, and supermatrix generation. Now supports both command-line arguments and external configuration files.
+A <b>phylogeny-aware</b> toolkit for classifying and annotating Hierarchical Orthologous Groups (HOGs) in pangenomic datasets. PanHOG classifies gene families into <b>core / shell / private</b> compartments, then goes beyond a raw presence/absence count: it re-weights the classification by the species tree, validates it with per-HOG gene trees and selection (dN/dS), functionally annotates the compartments, and produces publication-ready figures — all from an OrthoFinder <code>N0.tsv</code> plus per-accession FASTA.
 </td>
 </tr>
 </table>
----
 
+---
 
 ## Changelog
 
-### [v0.3.0] - 2026-07-01
+### [v0.4.0] - 2026-07-06
+
+The phylogeny-aware release: the classification is no longer just a count — it is
+cross-checked against the species tree, the gene trees, selection, and homology.
+
+#### New features
+- **Phylogeny-weighted classification (`--pan-weighted`)** — classify each HOG core/shell/private by the **fraction of total tree branch length its carriers span** (Faith's PD), not the raw count (thresholds `--pan-weighted-core` / `--pan-weighted-private`). Also writes per-clade compartments and a **`classification_confidence.tsv`** (frequency vs PD-weighted, per HOG) with the reclassified subset. All phylogeny outputs (LCA, gain/loss, PD-weighted, gene trees) go to a new **`phylogeny_weighted/`** directory with an in-directory `README.md`.
+- **Gene-tree validation (`--gene-trees`)** — build a per-HOG **protein** ML tree (MAFFT → RAxML-NG) and, with `--cds`, a **codon tree** (better resolved at shallow divergence), compare them and score each HOG **Confirmed / Redundant / Conflict / Low-signal**. **Private** genes (no tree) are validated by **BLAST** against every other accession. Writes example tree plots and a `genetree_flagged.tsv`.
+- **Compartment Ka/Ks (`--kaks-compartments N`)** — sample N HOGs per compartment, compute per-HOG dN/dS from codon alignments, and draw the classic core-vs-shell-vs-private **box plot** (Kruskal–Wallis). `--reference <accession>` gives a reference-vs-rest ("<accession> Ka/Ks") version.
+- **Pangenome-composition summary + plots** — for both the frequency-based (`--pan`) and PD-weighted (`--pan-weighted`) classifications: a summary TSV, a **pie chart**, a **U-shaped occupancy histogram**, and a stacked bar — with the **raw plotted TSVs** so figures can be re-drawn.
+- **Per-sample compartment files** — per-accession `core_HOGs_<sample>.tsv` / `shell_HOGs_<sample>.tsv` (+ genes, counts), like the existing private ones.
+- **`--outgroup`** — exclude accessions (e.g. a distant outgroup that deflates "core") from all analyses and plots.
 
 #### Fixes
+- **Per-HOG dN/dS estimator** — now the **ratio of means** `mean(dN)/mean(dS)`. The previous mean-of-per-pair-ratios was dominated by near-zero-dS pairs (codeml caps ω at 99) and grossly over-estimated per-HOG dN/dS; it is kept only as `dN_dS_mean_of_ratios`.
+- **Per-species counts** in `--summary` and `--random-hog-matrix` — an off-by-index bug that read the last accessions as absent/0 is fixed.
+- **Copy-number annotation-bias `[WARNING]`** — `--genevar` warns when one accession's mean copy number ≫ the rest (usually reference lift-over vs de-novo annotation, not biology).
 
-- **Correct Ka/Ks (dN/dS)**: The previous built-in Nei-Gojobori routine counted synonymous/non-synonymous *sites* with arbitrary constants and only on differing codons, producing uninterpretable values. dN/dS is now delegated to validated engines, and undefined quantities are reported as `NaN` instead of fabricated numbers.
-- **⚠ Per-HOG dN/dS estimator — do not use the mean of ratios**: the per-HOG `dN_dS` is now the **ratio of means**, mean(dN)/mean(dS). The earlier per-HOG value averaged the *per-pair* dN/dS ratios, which is dominated by any pair whose dS is near zero (dS → 0 sends a ratio to infinity, and PAML `codeml` caps ω at 99), so it grossly **over-estimates** per-HOG dN/dS and makes engines look inconsistent when they agree per pair. The mean-of-ratios value is retained only as `dN_dS_mean_of_ratios` for transparency. **Recommended default: engine `biopython` NG86 (fast) or `codeml` (validated), summarised by the ratio of means.**
-- **Per-species summary statistics fixed**: `--summary`'s `generate_summary_stats` indexed the per-HOG count vector by the raw N0 column index (3…N) instead of its 0-based position, so species after the first were mis-counted and the last few reported as **0**. Now indexes by position.
-- **Modern BioPython compatibility**: Importing the removed `Bio.Blast.Applications.NcbiblastpCommandline` disabled *all* BioPython features (Ka/Ks, phylogeny, supermatrix, annotation) on BioPython ≥ 1.85. Core imports are now separated and BLASTP runs via subprocess.
-- **Packaging**: `panhog_dnds` now ships with the package (the installed `panhog` command could not previously import the Ka/Ks engine); the duplicate top-level `meta.yaml` was removed and generated build artifacts are no longer tracked.
+### [v0.3.0] - 2026-07-01
 
-#### New Features
+- **Correct Ka/Ks (dN/dS)** — replaces the broken built-in Nei–Gojobori routine; delegated to validated engines via **`--kaks-method`**: `biopython` (`--kaks-model` NG86/LWL85/YN00/ML), **`codeml`** (PAML pairwise), or `kakscalculator`. Undefined values are reported as `NaN`; writes a per-HOG summary and a per-pair table.
+- **Phylogeny-aware analysis (`--species-tree`)** — deterministic internal-node naming + annotated Newick tree, species/tip validation, HOG→LCA mapping with a **Faith's PD fraction**, and **Dollo-parsimony gain/loss** per branch.
+- **Modern BioPython compatibility** (≥1.85) and **packaging** — ships all helper modules, `pyproject.toml`, a conda recipe, and a `pytest` suite.
 
-- **dN/dS engines (`--kaks-method`)**: `biopython` (via `Bio.codonalign`, with `--kaks-model` NG86/LWL85/YN00/ML), `codeml` (PAML pairwise, `runmode -2`), or `kakscalculator`. The `codeml` engine falls back to the built-in engine if the executable is absent.
-- **Pairwise dN/dS output**: writes both a per-HOG summary (`kaks_results_<type>.tsv`) and a per-pair table (`kaks_pairwise_<type>.tsv`); `--reference` restricts pairs to reference-species-vs-rest.
-- **Phylogeny-aware analysis (`--species-tree`)**: deterministic internal-node naming and an annotated Newick tree, species/tip validation, HOG→LCA mapping with a Faith's phylogenetic-diversity (PD) fraction, and **Dollo-parsimony gain/loss reconstruction** with per-branch gene-family gain/loss counts.
-- **PD-weighted & clade-conditioned classification (`--pan-weighted`)**: classify each HOG as core/shell/private by the fraction of total tree branch length its carriers span (thresholds `--pan-weighted-core` / `--pan-weighted-private`), and tally clade-core/shell/private compartments within every internal-node subtree.
-- **Gene-tree validation of compartment calls (`--gene-trees`)**: by default builds a per-HOG **protein** ML tree (MAFFT → RAxML-NG; peptides are always available). When `--cds` is supplied it also builds a **codon (CDS) tree**, which is **better resolved at shallow pangenome divergence** (~3× the sites plus synonymous variation that protein alignments cannot see) and is then used as the primary arbiter. The trees are compared and each HOG is scored for divergence, bootstrap support and species-tree concordance (normalised Robinson-Foulds), yielding a status: **Confirmed / Redundant / Conflict / Low-signal**. **Private genes** (no tree possible) are validated by **BLAST** against every other accession — a strong hit elsewhere means a likely missed ortholog, not a truly private gene. Accession-labelled tips prevent shared gene IDs from colliding.
-- **Compartment Ka/Ks comparison (`--kaks-compartments N`)**: samples N HOGs per compartment (core / shell / private), computes a per-HOG dN/dS (ratio of means) from codon alignments (requires `--cds`), writes a per-HOG table, and draws a **box plot** of the distributions with a Kruskal–Wallis test — the classic pangenome pattern of core genes under the strongest purifying selection. `--reference <accession>` switches to reference-vs-rest ("<accession> Ka/Ks"). (Single-copy private genes have no pair, so private uses *paralog* dN/dS where available — interpret separately.)
-- **Test suite**: `pytest` tests covering the dN/dS engine, the Ka/Ks pipeline end-to-end, the phylogeny module, gene-tree validation, and compartment Ka/Ks.
-
-### [v0.2.0] - 2026-02-27
+<details>
+<summary><b>[v0.2.0] - 2026-02-27</b></summary>
 
 #### New Features
-
-- **Summary Statistics (`--summary`)**: Generates a summary statistics table and stacked bar chart showing Gene/HOG ratios across pangenome compartments (core, single-copy, shell, private, cloud).
-- **Random HOG Matrix (`--random-hog-matrix N`)**: Generates an absent/single/multi-copy heatmap for N randomly sampled HOGs across all species.
-- **Ka/Ks Analysis (`--kaks`)**: Performs codon-based selection analysis (dN/dS) on orthologous groups using the Nei-Gojobori (1986) method.
-  - Supports core, shell, private, or all HOG types via `--kaks-type`.
-  - Calculation methods: `biopython` (built-in) or `kakscalculator` (external).
-  - Aligners: `mafft` or `muscle` via `--aligner`.
-  - Back-translation: `naive` (built-in) or `pal2nal` (external) via `--backtrans`.
-  - Optional pairwise mode with `--reference` species.
-- **Phylogenetic LCA Analysis (`--species-tree`)**: Maps HOGs to their Lowest Common Ancestor on a species tree, generating per-node HOG counts and a phylogeny-aware classification.
-- **Supermatrix Generation (`--supermatrix`)**: Concatenates aligned single-copy orthologs into a supermatrix for phylogenomic inference, with partition file for RAxML/IQ-TREE.
-- **Configurable Tool Paths**: Added `--mafft-path`, `--muscle-path`, `--pal2nal-path`, `--blastp-path`, `--makeblastdb-path`, `--kakscalculator-path` for HPC/custom installations.
+- **Summary Statistics (`--summary`)**: summary table + stacked bar of Gene/HOG ratios across compartments.
+- **Random HOG Matrix (`--random-hog-matrix N`)**: absent/single/multi-copy heatmap for N random HOGs.
+- **Ka/Ks Analysis (`--kaks`)**: codon-based dN/dS (Nei-Gojobori 1986); `--kaks-type`, `--aligner` (mafft/muscle), `--backtrans` (naive/pal2nal), optional `--reference`.
+- **Phylogenetic LCA Analysis (`--species-tree`)**: maps HOGs to their LCA on a species tree.
+- **Supermatrix Generation (`--supermatrix`)**: concatenated single-copy orthologs + partition file for RAxML/IQ-TREE.
+- **Configurable Tool Paths**: `--mafft-path`, `--muscle-path`, `--pal2nal-path`, `--blastp-path`, `--makeblastdb-path`, `--kakscalculator-path`.
 
 #### Improvements
+- Graceful optional-dependency handling; extended FASTA support (`.pep.fa`, uppercase); conda packaging; updated config examples.
 
-- **Graceful Dependency Handling**: Optional dependencies (PyYAML, BioPython, matplotlib/seaborn) are now handled with try/except, providing clear error messages when missing.
-- **Extended FASTA Support**: Now recognizes `.pep.fa` and uppercase extensions (`.FASTA`, `.FA`, `.PEP`).
-- **Conda Packaging**: Added `conda-recipe/meta.yaml`, `environment.yml`, and updated `setup.py` for single-command install via conda or pip.
-- **Updated Config Examples**: Example YAML config files now include all new analysis options.
+</details>
 
-### [Released] - 2025-09-21
+<details>
+<summary><b>[Released] - 2025-09-21</b></summary>
 
 #### New Features
-
-- **Functional Annotation (`--funano`)**: Added a major feature to perform functional annotation of pangenome compartments (core, shell, private, etc.) against the UniProt/Swiss-Prot database.
-  - Supports annotation of all compartments (`--funano 1`) or specific ones (`--funano 2-6`).
-  - Automatically downloads the database if a local copy is not provided via `--uniprot-db`.
-  - Generates detailed annotation reports, raw BLAST results, and protein sequence files.
-- **PAV and Count Matrix Generation**:
-  - Added `--pav` flag to generate a Presence/Absence Variant (PAV) matrix.
-  - Added `--matrix` flag to generate a gene copy number (Count) matrix.
+- **Functional Annotation (`--funano`)**: annotate compartments against UniProt/Swiss-Prot (`--funano 1` = all, `2-6` = specific); auto-downloads the DB if `--uniprot-db` is not given.
+- **PAV / Count matrices**: `--pav` (presence/absence), `--matrix` (copy number).
 
 #### Improvements
+- Restructured output under `results/` (`annotations/`, `blast_results/`, `peptides/`, `compartments/`); classification files under `results/compartments/panhog_classification/`; cloud-gene file gains a header.
 
-- **Restructured Output**: The output directory structure has been completely reorganized for better clarity. All results are now saved within a main `results/` directory, with sub-folders for `annotations/`, `blast_results/`, `peptides/`, and `compartments/`.
-- **Organized Classification**: Pangenome classification files (`core.HOGs.tsv`, etc.) are now neatly stored in `results/compartments/panhog_classification/`.
-- **Improved Cloud Gene File**: The `cloud.unassigned_genes.tsv` file now correctly includes a header.
+</details>
 
 ---
 
@@ -82,311 +73,194 @@ A phylogeny-aware toolkit for classifying and annotating Hierarchical Orthologou
 
 | Feature | Flag | Description |
 |---|---|---|
-| Global Pangenome Classification | `--pan` | Classify HOGs into core, single-copy, shell, private, and cloud |
-| Clade-Specific Analysis | `--clade sp1,sp2,...` | Pangenome classification on a subset of species |
-| Pan-Proteome Construction | `--proteome` | Extract FASTA sequences for pangenome compartments |
-| Gene Variation Heatmap | `--genevar` | Heatmap of gene copy number variation across species |
-| Saturation Analysis | `--saturation` | Bootstrapped core/pan-genome growth curves |
-| Clade-pair Saturation | `--saturation-cladepair` | Compare saturation between two clades |
-| Summary Statistics | `--summary` | Summary table and stacked bar chart |
-| Random HOG Matrix | `--random-hog-matrix N` | Heatmap of N randomly sampled HOGs |
-| PAV Matrix | `--pav` | Presence/Absence Variant matrix |
-| Count Matrix | `--matrix` | Gene copy number matrix |
-| Functional Annotation | `--funano` | BLAST-based annotation against UniProt |
-| Ka/Ks (dN/dS) Analysis | `--kaks` | Codon-based selection analysis (biopython / PAML codeml / KaKs_Calculator) |
-| Compartment Ka/Ks | `--kaks-compartments N` | Box plot of per-HOG dN/dS across core/shell/private (Kruskal–Wallis) |
-| Phylogeny-aware Analysis | `--species-tree` | HOG→LCA + PD fraction + Dollo gain/loss on the species tree |
-| PD-weighted Classification | `--pan-weighted` | Core/shell/private by PD fraction + per-clade compartments |
-| Gene-tree Validation | `--gene-trees` | Per-HOG protein + codon ML trees (MAFFT + RAxML-NG) + private-gene BLAST to validate core/shell/private calls |
+| Pangenome classification | `--pan` | Core / single-copy / shell / private / cloud + **pie, U-shaped histogram, stacked bar** |
+| Exclude outgroup | `--outgroup sp1,...` | Drop accessions (e.g. outgroups) from all analyses & plots |
+| Clade-specific analysis | `--clade sp1,...` | Restrict analysis to a subset of accessions |
+| Summary statistics | `--summary` | Per-compartment counts + stacked bar |
+| Gene-variation heatmap | `--genevar` | Copy-number heatmap (with annotation-bias warning) |
+| PAV / Count matrices | `--pav` / `--matrix` | Presence/absence & copy-number matrices |
+| Random HOG matrix | `--random-hog-matrix N` | Absent/single/multi heatmap of N random HOGs |
+| Saturation analysis | `--saturation` | Bootstrapped core/pan growth curves |
+| Functional annotation | `--funano` | BLAST-based annotation vs UniProt/Swiss-Prot |
+| Ka/Ks (dN/dS) | `--kaks` | Codon-based selection (biopython / PAML codeml / KaKs_Calculator) |
+| **Compartment Ka/Ks** | `--kaks-compartments N` | Box plot of per-HOG dN/dS across core/shell/private |
+| **Phylogeny-aware** | `--species-tree` | HOG→LCA + PD fraction + Dollo gain/loss |
+| **PD-weighted classification** | `--pan-weighted` | Core/shell/private by PD fraction + clade compartments + confidence |
+| **Gene-tree validation** | `--gene-trees` | Per-HOG protein + codon ML trees + private-gene BLAST |
 | Supermatrix | `--supermatrix` | Concatenated single-copy orthologs for phylogenomics |
-| Config File | `--config` | YAML-based configuration |
+| Config file | `--config` | YAML-based configuration |
 
 ---
 
 ## Installation
 
-### Option 1: Conda (Recommended)
-
+### Conda (recommended)
 ```bash
-# Create environment with all dependencies
-conda env create -f environment.yml
-conda activate panhog
-
-# Install PanHOG
-pip install .
+conda env create -f environment.yml     # numpy, pandas, biopython, scipy,
+conda activate panhog                    # mafft, muscle, pal2nal, paml, blast,
+pip install .                            # raxml-ng, modeltest-ng, ete3 + PanHOG
 ```
 
-### Option 2: Pip
-
+### Pip
 ```bash
-pip install panhog
+pip install panhog          # Python deps only; install mafft/raxml-ng/blast/paml separately
 ```
 
-### Option 3: From Source
-
+### From source (development)
 ```bash
 git clone https://github.com/yykaya/PanHOG.git
 cd PanHOG
-pip install -e .
+pip install -e ".[dev]"     # editable + scipy/pytest (scipy enables YN00/ML dN/dS)
+pytest                       # run the test suite
 ```
+After install, the `panhog` and `pangenehog` commands are available.
 
-After installation, the `panhog` and `pangenehog` commands are available system-wide.
-
-### Development & Testing
-
-```bash
-# Install with test/optional dependencies (scipy enables the YN00/ML dN/dS models)
-pip install -e ".[dev]"
-
-# Run the test suite
-pytest
-```
-
-External tools used by some analyses (`mafft`, `muscle`, `pal2nal`, PAML `codeml`,
-BLAST+) are best installed via conda; see `environment.yml`.
+**External tools by feature:** `mafft`/`muscle` (Ka/Ks, gene trees, supermatrix), `raxml-ng` (`--gene-trees`), `paml` codeml (`--kaks-method codeml`), `blast` (`--funano`, private-gene validation), `ete3` (gene-tree RF distances), `pal2nal` (`--backtrans pal2nal`).
 
 ---
 
-## Documentation
-- [Configuration Guide](README_config.md) - Detailed guide for configuring PanHOG with YAML files
-- [Pangene Integration Guide](README_pangene.md) - Instructions for using the pangene integration module
-
----
-
-## Quick Start
-
-### Basic pangenome classification
+## Quick start
 
 ```bash
-panhog --hog N0.tsv --fasta ./peptides/ --pan -o results/ -p run1_
-```
+# 1. Pangenome classification (+ pie / U-shaped histogram / stacked bar)
+panhog --hog N0.tsv --fasta peptides/ --pan -o results/ -p my_
 
-### Full pipeline with all analyses
+# 2. Exclude a distant outgroup so it doesn't deflate 'core'
+panhog --hog N0.tsv --fasta peptides/ --pan --outgroup A_lyrata -o results/ -p my_
 
-```bash
-panhog --hog N0.tsv --fasta ./peptides/ --pan \
-  --proteome ALL --genevar ALL --saturation \
-  --pav --matrix --summary --random-hog-matrix 1000 \
-  -o results/ -p full_
-```
+# 3. Phylogeny-weighted classification + confidence (frequency vs PD-weighted)
+panhog --hog N0.tsv --fasta peptides/ --pan --species-tree species.nwk --pan-weighted \
+       -o results/ -p my_
 
-### Ka/Ks selection analysis
+# 4. Ka/Ks per compartment (box plot; --reference for a reference-vs-rest version)
+panhog --hog N0.tsv --fasta peptides/ --cds cds/ --pan \
+       --kaks-compartments 100 --reference Col-0 -o results/ -p my_
 
-```bash
-panhog --hog N0.tsv --fasta ./peptides/ --pan \
-  --kaks --cds ./cds_fasta/ --kaks-type core \
-  --aligner mafft --backtrans naive \
-  -o results/ -p kaks_
-```
+# 5. Gene-tree validation of the compartment calls (protein + codon trees + private BLAST)
+panhog --hog N0.tsv --fasta peptides/ --cds cds/ --pan --species-tree species.nwk \
+       --gene-trees --gene-trees-per-class 5 -o results/ -p my_
 
-### Phylogenetic LCA analysis
+# 6. Per-HOG Ka/Ks on core (codeml engine) + supermatrix
+panhog --hog N0.tsv --fasta peptides/ --cds cds/ --pan \
+       --kaks --kaks-type core --kaks-method codeml --supermatrix -o results/ -p my_
 
-```bash
-panhog --hog N0.tsv --fasta ./peptides/ --pan \
-  --species-tree species_tree.nwk \
-  -o results/ -p phylo_
-```
+# 7. Functional annotation of the shell and private compartments
+panhog --hog N0.tsv --fasta peptides/ --pan --funano 4 -o results/ -p my_   # shell
+panhog --hog N0.tsv --fasta peptides/ --pan --funano 5 -o results/ -p my_   # private
 
-### With YAML config file
-
-```bash
-panhog --hog N0.tsv --fasta ./peptides/ --config config.yaml
-```
-
-### Clade-specific analysis
-
-```bash
-panhog --hog N0.tsv --fasta ./peptides/ \
-  --clade species1,species2,species3 -o results/ -p cladeA_
-```
-
-### Pangene annotation pipeline
-
-```bash
-pangenehog --hog N0.tsv --fasta ./peptides/ --pan -o results/
+# 8. Everything at once
+panhog --hog N0.tsv --fasta peptides/ --cds cds/ --species-tree species.nwk \
+       --pan --summary --genevar --pav --matrix --random-hog-matrix 500 --saturation \
+       --pan-weighted --gene-trees --kaks-compartments 100 --supermatrix \
+       --outgroup A_lyrata -o results/ -p my_
 ```
 
 ---
 
-## Command-Line Options
+## Command-line options
 
-### Main Arguments
+**Inputs / output**
 
-| Argument | Description | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `--hog` | Path to the input HOGs TSV file (e.g., `N0.tsv`). | **Required** |
-| `--fasta` | Path to the directory containing protein FASTA files. | **Required** |
-| `-o`, `--output` | Directory where all results will be saved. | `.` (current dir) |
-| `-p`, `--prefix` | A prefix to add to all output file names. | `""` (none) |
-| `--config` | Path to a YAML configuration file for advanced settings. | `config.yaml` |
+| `--hog` | OrthoFinder `N0.tsv` (required) | — |
+| `--fasta` | Directory of per-accession **peptide** FASTA | — |
+| `--cds` | Directory of per-accession **CDS** FASTA (Ka/Ks, codon trees) | `None` |
+| `--output` / `-o` | Output directory | — |
+| `--prefix` / `-p` | Output file prefix | `""` |
+| `--config` | YAML config file | `None` |
 
-### Analysis Modes
+**Classification & filtering**
 
-| Argument | Description | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `--pan` | Performs a global pangenome classification across all species. | Enabled if `--clade` is not used. |
-| `--clade` | Performs a pangenome classification on a specific subset of species. Provide a comma-separated list. | `None` |
+| `--pan` | Global core/shell/private classification (+ summary plots) | off |
+| `--clade sp1,sp2,...` | Restrict to a subset of accessions | `None` |
+| `--outgroup sp1,...` | **Exclude** accessions from all analyses/plots | `None` |
+| `--summary` | Per-compartment summary table + bar chart | off |
+| `--genevar` | Copy-number heatmap | off |
+| `--pav` / `--matrix` | Presence/absence & copy-number matrices | off |
+| `--random-hog-matrix N` | Heatmap of N random HOGs | off |
+| `--saturation` | Bootstrapped core/pan growth curves | off |
 
-### New Analyses (v0.2.0)
+**Phylogeny-aware**
 
-| Argument | Description | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `--summary` | Generate summary statistics table and stacked bar chart. | `False` |
-| `--random-hog-matrix` | Generate random HOG matrix heatmap with N HOGs. | `None` |
-| `--kaks` | Perform Ka/Ks (dN/dS) selection analysis. | `False` |
-| `--cds` | Path to directory containing CDS FASTA files (required for `--kaks`). | `None` |
-| `--kaks-type` | HOG type for Ka/Ks analysis: `core`, `shell`, `private`, `all`. | `core` |
-| `--kaks-method` | dN/dS engine: `biopython`, `codeml` (PAML), or `kakscalculator`. | `biopython` |
-| `--kaks-model` | Sub-model for the `biopython` engine: `NG86`, `LWL85`, `YN00`, `ML` (YN00/ML need SciPy). | `NG86` |
-| `--codeml-path` | Path to the PAML `codeml` executable (for `--kaks-method codeml`). | `codeml` |
-| `--aligner` | Protein alignment tool: `mafft` or `muscle`. | `mafft` |
-| `--backtrans` | Back-translation method: `naive` (built-in) or `pal2nal`. | `naive` |
-| `--reference` | Reference species for pairwise Ka/Ks analysis. | `None` |
-| `--species-tree` | Path to Newick species tree for phylogenetic LCA analysis. | `None` |
-| `--pan-weighted` | PD-weighted core/shell/private + per-clade compartments (needs `--species-tree`). Outputs `hog_pd_weighted_class.tsv` and `clade_compartments.tsv`. | `False` |
-| `--pan-weighted-core` | PD-fraction ≥ this ⇒ `core`. | `0.9` |
-| `--pan-weighted-private` | PD-fraction ≤ this ⇒ `private`. | `0.1` |
-| `--gene-trees` | Validate compartment calls with per-HOG ML gene trees (MAFFT + RAxML-NG). Writes `genetree_validation.tsv`. | `False` |
-| `--gene-trees-per-class` | Candidate HOGs per compartment for `--gene-trees`. | `3` |
-| `--gene-tree-hogs` | Comma-separated HOG IDs for `--gene-trees` (overrides auto selection). | `None` |
-| `--gene-tree-model` | RAxML-NG **protein** model for `--gene-trees`. | `LG+G` |
-| `--gene-tree-codon-model` | RAxML-NG **codon/nucleotide** model (codon tree is built when `--cds` is given). | `GTR+G` |
-| `--gene-tree-bs` | Bootstrap replicates per gene tree. | `100` |
-| `--raxml-ng-path` | Path to the RAxML-NG executable. | `raxml-ng` |
-| `--kaks-compartments` | Sample N HOGs per compartment and box-plot per-HOG dN/dS (needs `--cds`). Writes `kaks_by_compartment.tsv` + `.png/.pdf/.svg`. | `0` (off) |
-| `--kaks-compartments-maxseqs` | Skip HOGs with more sequences than this in `--kaks-compartments`. | `12` |
-| `--supermatrix` | Generate supermatrix from single-copy orthologs. | `False` |
+| `--species-tree` | Newick species tree → LCA + PD + Dollo (in `phylogeny_weighted/`) | `None` |
+| `--pan-weighted` | PD-weighted core/shell/private + clade compartments + confidence | off |
+| `--pan-weighted-core` / `--pan-weighted-private` | PD-fraction thresholds | `0.9` / `0.1` |
+| `--supermatrix` | Concatenate single-copy orthologs (+ partitions) | off |
 
-### Tool Paths
+**Gene-tree validation**
 
-| Argument | Description | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `--mafft-path` | Path to MAFFT executable. | `mafft` |
-| `--muscle-path` | Path to MUSCLE executable. | `muscle` |
-| `--pal2nal-path` | Path to PAL2NAL script. | `pal2nal.pl` |
-| `--blastp-path` | Path to BLASTP executable. | `blastp` |
-| `--makeblastdb-path` | Path to makeblastdb executable. | `makeblastdb` |
-| `--kakscalculator-path` | Path to KaKs_Calculator executable. | `KaKs_Calculator` |
+| `--gene-trees` | Per-HOG protein (+ codon, with `--cds`) ML trees + private BLAST | off |
+| `--gene-trees-per-class` | Candidate HOGs per compartment | `3` |
+| `--gene-tree-hogs` | Comma-separated HOG IDs (override auto-selection) | `None` |
+| `--gene-tree-model` / `--gene-tree-codon-model` | RAxML-NG protein / codon model | `LG+G` / `GTR+G` |
+| `--gene-tree-bs` | Bootstrap replicates | `100` |
+| `--raxml-ng-path` | Path to RAxML-NG | `raxml-ng` |
 
-### Functional Annotation
+**Ka/Ks (dN/dS)**
 
-| Argument | Description | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `--funano` | Performs functional annotation against UniProt. Options: `0` (disabled), `1` (all), `2` (core), `3` (single-copy), `4` (shell), `5` (private), `6` (cloud). | `0` |
-| `--uniprot-db` | Path to a local UniProt/Swiss-Prot FASTA file. If not provided, it will be downloaded automatically. | `None` |
-| `--threads` | Number of CPU threads to use for the BLASTP search. | `4` |
-| `--keep-uniprot` | If specified, the downloaded UniProt database will not be deleted after the run. | `False` |
+| `--kaks` | Per-HOG dN/dS on a compartment | off |
+| `--kaks-type` | `core` / `shell` / `private` / `all` | `core` |
+| `--kaks-method` | `biopython` / `codeml` / `kakscalculator` | `biopython` |
+| `--kaks-model` | biopython sub-model: `NG86` / `LWL85` / `YN00` / `ML` | `NG86` |
+| `--reference` | Reference accession → reference-vs-rest pairing | `None` |
+| `--aligner` / `--backtrans` | `mafft`/`muscle` ; `naive`/`pal2nal` | `mafft` / `naive` |
+| `--kaks-compartments N` | Sample N HOGs/compartment → dN/dS box plot | `0` (off) |
+| `--kaks-compartments-maxseqs` | Skip HOGs with more sequences than this | `12` |
 
-### Downstream Analyses & Visualizations
+**Functional annotation & tool paths**
 
-| Argument | Description | Default |
+| Flag | Description | Default |
 |---|---|---|
-| `--proteome` | Constructs a pan-proteome FASTA file. Use `--proteome` for all species or `--proteome sp1,sp2` for a subset. | `None` |
-| `--genevar` | Generates a heatmap of gene copy number variation. Use `--genevar` for all species or `--genevar sp1,sp2` for a subset. | `None` |
-| `--saturation` | Performs a bootstrapped saturation analysis to plot core and pan-genome growth. | `False` |
-| `--saturation-cladepair`| Performs saturation analysis for two pre-defined clades (`--clade1`, `--clade2`) on the same plot. | `False` |
-| `--zscore` | Applies Z-score normalization to the `--genevar` heatmap. | `False` |
-| `--log` | Applies log2(count+1) transformation to the `--genevar` heatmap. | `False` |
-
-### Output Matrices
-
-| Argument | Description | Default |
-|---|---|---|
-| `--pav` | Generates a Presence/Absence Variant (PAV) matrix (1 for present, 0 for absent). | `False` |
-| `--matrix` | Generates a gene copy number (Count) matrix. | `False` |
-
-### Saturation Plot Customization
-
-| Argument | Description | Default |
-|---|---|---|
-| `-b`, `--bootstrap` | Number of random sampling iterations for saturation analysis. | `100` |
-| `--clade1` / `--clade2` | Comma-separated species lists for `--saturation-cladepair`. | (pre-defined lists) |
-| `--marker-*` / `--color-*` | A range of options to customize markers and colors for saturation plots. | (various) |
+| `--funano {0..6}` | Annotate compartments vs UniProt (1=all, 2=core, 3=single-copy, 4=shell, 5=private, 6=cloud) | `0` |
+| `--uniprot-db` | Local UniProt FASTA (else auto-download) | `None` |
+| `--mafft-path` / `--muscle-path` / `--pal2nal-path` / `--codeml-path` / `--blastp-path` / `--makeblastdb-path` / `--kakscalculator-path` | Custom tool paths | tool name |
 
 ---
 
-## Configuration File
+## Output structure
 
-You can use a YAML config file to set advanced parameters like colors, markers, labels, and clade definitions.
-
-### Sample `config.yaml`
-
-```yaml
-# Input files
-hog: "N0.tsv"
-fasta: "/path/to/peptide/fasta"
-
-# Output settings
-output: "./results"
-prefix: "my_analysis_"
-
-# Analysis options
-pan: true
-summary: true
-random_hog_matrix: 1000
-bootstrap: 10000
-
-# Ka/Ks analysis
-# kaks: true
-# cds: "/path/to/cds/fasta"
-# kaks_type: "core"
-# aligner: "mafft"
-
-# Phylogeny LCA
-# species_tree: "species_tree.nwk"
-
-# Supermatrix
-# supermatrix: true
-
-# Saturation plot customization
-marker_core: "o"
-marker_pan: "s"
+```
+results/compartments/
+├── panhog_classification/
+│   ├── <p>core.HOGs.tsv, <p>shell.HOGs.tsv, <p>gt-specific.HOGs.tsv, ...
+│   ├── <p>{core,shell,single-copy}_HOGs_<sample>.tsv   (per-accession views)
+│   ├── <p>pangenome_summary.tsv + pie / occupancy_histogram / stacked_bar   (+ raw TSVs)
+│   └── <p>private_HOGs_<sample>.tsv, ...
+├── <p>PAV.tsv, <p>CountMatrix.tsv, <p>summary_stats.tsv, <p>genevar_heatmap.png, ...
+├── <p>kaks_by_compartment.tsv/.png, <p>kaks_results_<type>.tsv, ...
+└── phylogeny_weighted/                       ← --species-tree / --pan-weighted
+    ├── README.md                             (explains every file + PD_Fraction)
+    ├── <p>hog_lca_analysis.tsv, <p>hog_gainloss.tsv, <p>phylo_node_summary.tsv
+    ├── <p>hog_pd_weighted_class.tsv, <p>clade_compartments.tsv
+    ├── <p>classification_confidence.tsv, <p>reclassified_HOGs.tsv
+    ├── <p>pangenome_summary.tsv + pie / occupancy_histogram / stacked_bar
+    ├── <p>genetree_validation.tsv, <p>genetree_flagged.tsv
+    └── gene_trees/  (*.raxml.support + example tree plots)
 ```
 
-### Run using config:
+---
 
-```bash
-panhog --hog N0.tsv --fasta ./peptides/ --config config.yaml
-```
+## Phylogeny-aware classification, in one line each
+- **Frequency** (`--pan`): core = present in all accessions, private = 1, shell = in between.
+- **PD-weighted** (`--pan-weighted`): re-rank by the **fraction of tree branch length** the carriers span — a gene in 11/12 accessions that spans ≥90 % of the tree is really core; `classification_confidence.tsv` tells you which HOGs the count and the phylogeny agree/disagree on.
+- **Gene-tree** (`--gene-trees`): does each HOG's own tree confirm the grouping? `Conflict` = probably not clean orthologs.
+- **Selection** (`--kaks-compartments`): core should be under the strongest purifying selection (lowest dN/dS).
 
-> Any command-line flag will **override** the corresponding config value.
+Full guidance: **[docs/CLASSIFICATION_GUIDANCE.md](docs/CLASSIFICATION_GUIDANCE.md)** · PD outputs **[docs/PHYLOGENY_WEIGHTED.md](docs/PHYLOGENY_WEIGHTED.md)** · gene trees **[docs/GENETREE_VALIDATION.md](docs/GENETREE_VALIDATION.md)** · heatmap normalisation **[docs/HEATMAP_NORMALISATION.md](docs/HEATMAP_NORMALISATION.md)**.
 
 ---
 
-## Output Files
+## Configuration file
+All flags can be set in a YAML config (`--config config.yaml`); see `example1.config.yaml` / `example2.config.yaml` and [README_config.md](README_config.md). The companion **`pangenehog`** pangene-annotation pipeline is documented in [README_pangene.md](README_pangene.md).
 
-* `core.HOGs.tsv`, `shell.HOGs.tsv`, `gt-specific.HOGs.tsv`, `single-copy.HOGs.tsv`
-* `cloud.unassigned_genes.tsv`
-* `private_genes_<species>.txt`
-* `pan_proteome.fa`
-* `summary_stats.tsv`, `summary_stats.png` (v0.2.0)
-* `random_hog_matrix.png` (v0.2.0)
-* `pav_matrix.tsv`, `count_matrix.tsv`
-* `genevar_heatmap.[png|pdf|svg]`
-* `saturation_analysis.[png|pdf|svg]`
-* `kaks_results_<type>.tsv` (per-HOG dN/dS summary), `kaks_pairwise_<type>.tsv` (per-pair dN/dS) (v0.3.0)
-* `hog_lca_analysis.tsv` (LCA + PD fraction), `hog_gainloss.tsv` (Dollo gains/losses), `phylo_node_summary.tsv`, `species_tree_annotated.nwk` (v0.3.0)
-* `supermatrix.fasta`, `supermatrix_partitions.txt` (v0.2.0)
-
----
-
-## Recommendations
-
-* Use `--summary` for a quick overview of your pangenome composition.
-* Use `--random-hog-matrix 1000` to visualize HOG presence patterns across species.
-* Use `--proteome` to extract FASTA of shared pangenes.
-* Use `--saturation-cladepair` for insight into core/pan genome expansion across defined clades.
-* Use `--genevar` with `--zscore` for population-scale expansions or contractions.
-* Use `--kaks` with `--kaks-type core` to identify genes under selection in the core genome; add `--kaks-method codeml` for PAML-based estimates or `--reference <species>` for pairwise reference-vs-rest dN/dS.
-* Use `--species-tree` with a well-supported phylogeny to obtain per-branch gene-family gain/loss (Dollo) and a phylogenetic-diversity fraction per HOG.
-* Use `--supermatrix` to generate input for phylogenomic tree inference.
-
----
-
-## Contact & Citation
-
-This tool is currently in **beta**. For questions, contributions, or citation requests, please contact the developer or include the GitHub link in your reference.
-
----
-
-Happy pangenomics with **PanHOG**!
+## Contact & citation
+Yasin Kaya — https://github.com/yykaya/PanHOG · MIT License.

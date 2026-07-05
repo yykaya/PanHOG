@@ -19,6 +19,9 @@ dependencies:
   - muscle           # alternative aligner
   - pal2nal          # codon back-translation (optional)
   - paml             # codeml engine for --kaks-method codeml
+  - raxml-ng         # ML gene trees (--gene-trees)
+  - modeltest-ng     # optional model selection for gene trees
+  - ete3             # gene-tree analysis (Robinson-Foulds distances)
   # Install PanHOG itself from this checkout.
   # Run `conda env create -f environment.yml` from the repository root, then the
   # `panhog` / `pangenehog` commands are available in the environment.

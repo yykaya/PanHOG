@@ -42,6 +42,9 @@ requirements:
     - muscle           # alternative aligner
     - pal2nal          # codon back-translation (optional)
     - paml             # codeml engine for --kaks-method codeml
+    - raxml-ng         # ML gene trees (--gene-trees)
+    - modeltest-ng     # optional gene-tree model selection
+    - ete3             # gene-tree analysis (Robinson-Foulds distances)
 
 test:
   imports:
