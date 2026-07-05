@@ -11,22 +11,18 @@
 They are not supposed to match: one is a per-compartment total, the other is a
 per-family copy-number map of the most variable HOGs.
 
-## Why Col-0 and Tanz-1 look "higher" — annotation bias, not biology
-Measured on the input `N0.tsv`:
-
-| | mean copies/HOG | % multi-copy | total genes |
-|---|---|---|---|
-| **Col-0** | 1.14 | 17.8 % | 12,564 |
-| **Tanz-1** | 1.11 | 17.7 % | 12,278 |
-| other 10 accessions | ~0.64 | ~1.3 % | ~7,000 |
-
-And **Col-0 vs Tanz-1 have identical copy counts in 91.3 % of HOGs (r = 0.78)**, while
-Col-0 vs A_lyrata r = 0.07. Tanz-1's annotation is a **reference lift-over of Col-0**
-(both use TAIR `AT#G` IDs), so the two carry the same, richer/more-fragmented gene
-models — ~2× the genes and ~14× the multi-copy rate of the de-novo-annotated
-accessions. The heatmap faithfully shows this; it is an **annotation-method
-artefact**, not true copy-number variation. PanHOG now prints a `[WARNING]` when one
-accession's mean copy number exceeds 1.5× the median, exactly to flag this.
+## Why some accessions look "higher" — annotation bias, not biology
+When one or two accessions show a systematically higher mean copy number, more
+multi-copy families and roughly double the gene count of the rest, the usual cause is
+**annotation method, not biology**. An accession annotated by **reference lift-over**
+inherits the reference's richer / more-fragmented gene models (and its gene IDs),
+whereas **de-novo-annotated** accessions carry leaner models — so the lift-over
+accession has more genes and a much higher multi-copy rate. Two lift-over accessions
+built from the *same* reference will also correlate almost perfectly in copy number,
+while correlating poorly with a divergent genome. The heatmap faithfully shows this;
+it is an **annotation-method artefact**, not true copy-number variation. PanHOG prints
+a `[WARNING]` when one accession's mean copy number exceeds 1.5× the median, exactly
+to flag this.
 
 ## Normalisation options (`plot_genevar_heatmap`)
 - **raw** (default): shows absolute copy number — dominated by the abundant accessions.
@@ -34,7 +30,7 @@ accession's mean copy number exceeds 1.5× the median, exactly to flag this.
 - **`--zscore`**: per-HOG z-score (`log2` then row-standardised) — removes each HOG's
   absolute level and shows **relative** variation across accessions. This is the right
   choice when accessions were annotated differently, because it de-emphasises the
-  systematic Col-0/Tanz-1 offset.
+  systematic per-accession offset introduced by lift-over annotation.
 
 **Recommendation:** for cross-accession comparison use `--zscore`; and treat
 copy-number differences between differently-annotated accessions (lift-over vs

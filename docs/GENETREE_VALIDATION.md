@@ -2,8 +2,9 @@
 
 ## Motivation
 
-PanHOG's compartments are defined by **presence/absence frequency**: 12/12 = core,
-1/12 = private, 2–11/12 = shell. That count trusts the upstream ortholog grouping
+PanHOG's compartments are defined by **presence/absence frequency**: present in all
+accessions = core, in exactly one = private, in between = shell. That count trusts the
+upstream ortholog grouping
 completely — it never asks whether the genes a HOG lumps together are a coherent,
 divergent ortholog set. `--gene-trees` adds that check and assigns each candidate
 HOG a phylogenetically-informed **status**, so the compartment becomes a supported
@@ -40,47 +41,37 @@ elsewhere (identity ≥ 50 %, coverage ≥ 50 %) means the gene is **not truly
 private** — its ortholog exists but was not grouped into the HOG — so the private
 call is likely an ortholog-grouping artefact.
 
-## Result on the toy data (12 *Arabidopsis* Chr1 accessions)
+## How to read the output
 
-```
-panhog --hog N0.tsv --fasta peptide/ --cds cds/ --pan \
-       --species-tree species_tree.nwk --gene-trees
-```
+`genetree_validation.tsv` has one row per candidate HOG. The columns to read together:
 
-**Protein vs codon (non-private):**
+| Column | Meaning |
+|---|---|
+| `prot_support` / `codon_support` | mean bootstrap support of the protein / codon tree (higher = better resolved) |
+| `codon_nRF` | normalised Robinson-Foulds distance of the codon tree vs the species tree (0 = identical topology, 1 = maximally different) |
+| `prot~codon` | protein-vs-codon topology distance (0 = the two gene trees agree) |
+| `Status` | Confirmed / Redundant / Conflict / Low-signal |
 
-| HOG | comp | prot support | codon support | codon nRF | prot~codon | Status |
-|---|---|---|---|---|---|---|
-| HOG0000060 | core | 39 | **52** | 1.0 | 0.44 | Low-signal |
-| HOG0000261 | core | 1.5 | **14** | 1.0 | 1.0 | Low-signal |
-| HOG0000026 | shell | 35 | 24 | 0.0 | 0.0 | Low-signal |
-| HOG0000074 | shell | 75 | 75 | 1.0 | **0.0** | **Conflict** |
+Interpreting them:
 
-**Private (BLAST):**
-
-| HOG | gene | best hit elsewhere | Status |
-|---|---|---|---|
-| HOG0000863 | Col-0 `AT1G06190.2` | **Nemrut-1, 99.6 % id, 95 % cov** | **REVIEW: likely missed ortholog** |
-
-### What this tells us
-
-- **The codon tree adds signal.** Support rises vs the protein tree (HOG0000060
-  39→52), and HOG0000261 — *identical* at the protein level — shows tiny
-  synonymous variation only the codon tree sees.
-- **HOG0000074 is a real red flag.** Its protein and codon trees **agree with each
-  other** (prot~codon nRF = 0) but **both conflict with the species tree at 75 %
-  support** → the six "present" genes form a strongly-supported topology that is
-  *not* the species topology: hidden paralogy / mis-grouping. Its "shell" call
-  should be reviewed (candidate for splitting).
-- **HOG0000863 is not really private.** Its Col-0 gene has a 99.6 %-identical
-  homolog in Nemrut-1 that was not grouped into the HOG → the "private" label is an
-  ortholog-calling miss, and the gene should be **reclassified** (merged with the
-  Nemrut-1 ortholog).
-- **Single-gene resolution is limited at this depth.** Most core/shell genes are
-  `Low-signal` even with codon data — these 12 accessions are very closely related,
-  so a single short gene rarely recovers the species tree. The tool correctly says
-  "unresolved" rather than a false "Confirmed"; concatenation (`--supermatrix`) is
-  the route to a resolved species-level tree.
+- **The codon tree usually adds signal.** It has ~3× the sites and captures synonymous
+  variation, so a HOG that is *identical* at the protein level can still be resolved by
+  the codon tree — bootstrap support typically rises relative to the protein tree. Use
+  the codon tree as the arbiter when `--cds` is provided.
+- **Protein and codon agree with each other but both conflict with the species tree**
+  (high support, high `codon_nRF`, `prot~codon` ≈ 0) is the key red flag → `Conflict`:
+  the members form a strongly-supported topology that is *not* the species topology
+  (hidden paralogy / mis-grouping). That compartment call should be reviewed — the HOG
+  is a candidate for splitting.
+- **Private BLAST:** a "private" gene with a strong full-length hit in another
+  accession (e.g. ≥ 95 % identity, near-complete coverage) is flagged
+  **REVIEW: likely missed ortholog** — it is not truly private and should be merged
+  with that accession's ortholog.
+- **Single-gene resolution is limited at shallow divergence.** When accessions are
+  closely related, a single short gene rarely recovers the species tree, so many
+  core/shell HOGs are honestly `Low-signal` rather than a false `Confirmed`. That is
+  the expected, correct behaviour; concatenation (`--supermatrix`) is the route to a
+  resolved species-level tree.
 
 ## Reclassification
 

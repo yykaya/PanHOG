@@ -88,6 +88,7 @@ cross-checked against the species tree, the gene trees, selection, and homology.
 | Clade-specific analysis | `--clade sp1,...` | Restrict analysis to a subset of accessions |
 | Summary statistics | `--summary` | Per-compartment counts + stacked bar |
 | Gene-variation heatmap | `--genevar` | Copy-number heatmap (with annotation-bias warning) |
+| Pan-proteome FASTA | `--proteome` | Concatenated pan-proteome (all accessions or a subset) |
 | PAV / Count matrices | `--pav` / `--matrix` | Presence/absence & copy-number matrices |
 | Random HOG matrix | `--random-hog-matrix N` | Absent/single/multi heatmap of N random HOGs |
 | Saturation analysis | `--saturation` | Bootstrapped core/pan growth curves |
@@ -131,38 +132,90 @@ After install, the `panhog` and `pangenehog` commands are available.
 
 ## Quick start
 
+> In the examples, `outgroup_acc` / `ref_acc` / `acc1,acc2,...` are placeholders —
+> substitute your own accession names (they must match the column names in `N0.tsv`).
+
+### Basic pangenome classification (+ pie / U-shaped histogram / stacked bar)
 ```bash
-# 1. Pangenome classification (+ pie / U-shaped histogram / stacked bar)
-panhog --hog N0.tsv --fasta peptides/ --pan -o results/ -p my_
+panhog --hog N0.tsv --fasta peptides/ --pan -o results/ -p run1_
+```
 
-# 2. Exclude a distant outgroup so it doesn't deflate 'core'
-panhog --hog N0.tsv --fasta peptides/ --pan --outgroup A_lyrata -o results/ -p my_
+### Full pipeline with all core analyses
+```bash
+panhog --hog N0.tsv --fasta peptides/ --pan \
+  --proteome ALL --genevar ALL --saturation \
+  --pav --matrix --summary --random-hog-matrix 1000 \
+  -o results/ -p full_
+```
 
-# 3. Phylogeny-weighted classification + confidence (frequency vs PD-weighted)
-panhog --hog N0.tsv --fasta peptides/ --pan --species-tree species.nwk --pan-weighted \
-       -o results/ -p my_
+### Exclude a distant outgroup (so it doesn't deflate "core")
+```bash
+panhog --hog N0.tsv --fasta peptides/ --pan --outgroup outgroup_acc -o results/ -p ingroup_
+```
 
-# 4. Ka/Ks per compartment (box plot; --reference for a reference-vs-rest version)
+### Ka/Ks selection analysis
+```bash
+panhog --hog N0.tsv --fasta peptides/ --pan \
+  --kaks --cds cds/ --kaks-type core \
+  --aligner mafft --backtrans naive \
+  -o results/ -p kaks_
+```
+
+### Compartment Ka/Ks box plot (core vs shell vs private)
+```bash
 panhog --hog N0.tsv --fasta peptides/ --cds cds/ --pan \
-       --kaks-compartments 100 --reference Col-0 -o results/ -p my_
+  --kaks-compartments 100 --reference ref_acc \
+  -o results/ -p kaks_
+```
 
-# 5. Gene-tree validation of the compartment calls (protein + codon trees + private BLAST)
-panhog --hog N0.tsv --fasta peptides/ --cds cds/ --pan --species-tree species.nwk \
-       --gene-trees --gene-trees-per-class 5 -o results/ -p my_
+### Phylogenetic LCA analysis
+```bash
+panhog --hog N0.tsv --fasta peptides/ --pan \
+  --species-tree species_tree.nwk \
+  -o results/ -p phylo_
+```
 
-# 6. Per-HOG Ka/Ks on core (codeml engine) + supermatrix
+### Phylogeny-weighted classification + confidence (frequency vs PD-weighted)
+```bash
+panhog --hog N0.tsv --fasta peptides/ --pan \
+  --species-tree species_tree.nwk --pan-weighted \
+  -o results/ -p phylo_
+```
+
+### Gene-tree validation of the compartments (protein + codon trees + private BLAST)
+```bash
 panhog --hog N0.tsv --fasta peptides/ --cds cds/ --pan \
-       --kaks --kaks-type core --kaks-method codeml --supermatrix -o results/ -p my_
+  --species-tree species_tree.nwk --gene-trees --gene-trees-per-class 5 \
+  -o results/ -p phylo_
+```
 
-# 7. Functional annotation of the shell and private compartments
-panhog --hog N0.tsv --fasta peptides/ --pan --funano 4 -o results/ -p my_   # shell
-panhog --hog N0.tsv --fasta peptides/ --pan --funano 5 -o results/ -p my_   # private
+### Functional annotation of a compartment (here: shell)
+```bash
+panhog --hog N0.tsv --fasta peptides/ --pan --funano 4 -o results/ -p shell_
+```
 
-# 8. Everything at once
-panhog --hog N0.tsv --fasta peptides/ --cds cds/ --species-tree species.nwk \
-       --pan --summary --genevar --pav --matrix --random-hog-matrix 500 --saturation \
-       --pan-weighted --gene-trees --kaks-compartments 100 --supermatrix \
-       --outgroup A_lyrata -o results/ -p my_
+### Clade-specific analysis
+```bash
+panhog --hog N0.tsv --fasta peptides/ \
+  --clade acc1,acc2,acc3 -o results/ -p cladeA_
+```
+
+### With a YAML config file
+```bash
+panhog --hog N0.tsv --fasta peptides/ --config config.yaml
+```
+
+### Pangene annotation pipeline
+```bash
+pangenehog --hog N0.tsv --fasta peptides/ --pan -o results/
+```
+
+### Everything at once
+```bash
+panhog --hog N0.tsv --fasta peptides/ --cds cds/ --species-tree species_tree.nwk \
+  --pan --summary --genevar ALL --proteome ALL --pav --matrix --random-hog-matrix 500 \
+  --saturation --pan-weighted --gene-trees --kaks-compartments 100 --supermatrix \
+  --outgroup outgroup_acc -o results/ -p full_
 ```
 
 ---
@@ -178,7 +231,7 @@ panhog --hog N0.tsv --fasta peptides/ --cds cds/ --species-tree species.nwk \
 | `--cds` | Directory of per-accession **CDS** FASTA (Ka/Ks, codon trees) | `None` |
 | `--output` / `-o` | Output directory | — |
 | `--prefix` / `-p` | Output file prefix | `""` |
-| `--config` | YAML config file | `None` |
+| `--config` | YAML config file | `config.yaml` |
 
 **Classification & filtering**
 
@@ -188,7 +241,9 @@ panhog --hog N0.tsv --fasta peptides/ --cds cds/ --species-tree species.nwk \
 | `--clade sp1,sp2,...` | Restrict to a subset of accessions | `None` |
 | `--outgroup sp1,...` | **Exclude** accessions from all analyses/plots | `None` |
 | `--summary` | Per-compartment summary table + bar chart | off |
-| `--genevar` | Copy-number heatmap | off |
+| `--genevar [ALL\|sp1,..]` | Copy-number heatmap (all accessions or a subset) | off |
+| `--zscore` | Row z-score normalise the copy-number heatmap | off |
+| `--proteome [ALL\|sp1,..]` | Build a pan-proteome FASTA (all accessions or a subset) | off |
 | `--pav` / `--matrix` | Presence/absence & copy-number matrices | off |
 | `--random-hog-matrix N` | Heatmap of N random HOGs | off |
 | `--saturation` | Bootstrapped core/pan growth curves | off |

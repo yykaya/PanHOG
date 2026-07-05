@@ -42,11 +42,11 @@ Directly compares the two views per HOG.
 | `Agreement` | `Same` or `Reclassified` |
 | `Change` | e.g. `shell->core` when the two disagree |
 
-**On this dataset (11,031 HOGs): 8,096 (73.4 %) agree; 2,935 (26.6 %) are
-reclassified — almost all `shell → core` (2,886).** Those are HOGs the flat count
-demotes to shell for missing an accession or two, but which span ≥90 % of the tree
-and are phylogenetically core. Treat the **73 % that agree as high-confidence
-compartment calls**; scrutinise the reclassified 27 % (mostly near-core HOGs).
+Typically **most HOGs agree** between the two views, and the reclassified minority is
+dominated by `shell → core` promotions — HOGs the flat count demotes to shell for
+missing an accession or two, but which span ≥ 90 % of the tree and are
+phylogenetically core. Treat the **agreeing HOGs as high-confidence compartment
+calls**, and scrutinise the reclassified ones (mostly near-core HOGs).
 
 ### `<prefix>clade_compartments.tsv` — compartments *within* each clade
 For every internal node, core/shell/private tallied among that clade's own tips
@@ -56,7 +56,6 @@ gene that is core within one lineage but absent from another.
 ### `<prefix>phylo_node_summary.tsv` — Dollo gain/loss per branch
 `HOGs_LCA` (origins), `Gains`, `Losses` per node. Dollo parsimony places each HOG
 once at its carriers' LCA and counts losses on branches to carrier-free clades.
-(This dataset: 11,031 gains, 25,220 losses across 23 nodes.)
 
 ### `<prefix>species_tree_annotated.nwk`
 The species tree with deterministic internal-node names (`N0…Nk`) so the `LCA_Node`
@@ -72,9 +71,9 @@ probably **not clean orthologs** and the compartment call is suspect. The
 (`genetree_core_example.png`, `genetree_shell_example.png`) to eyeball clustering.
 
 ## How to decide "confident" compartments
-1. **Agree in `classification_confidence.tsv`** (73 %) → trust the call.
-2. **Reclassified** (27 %) → prefer `Weighted_Class` when accessions are unevenly
-   sampled on the tree (mostly near-core shell→core here).
+1. **Agree in `classification_confidence.tsv`** → trust the call.
+2. **Reclassified** → prefer `Weighted_Class` when accessions are unevenly
+   sampled on the tree (mostly near-core shell→core).
 3. **Gene-tree `Conflict`** → flag/split regardless of count.
 4. **Private** → BLAST-validate (most are missed orthologs; see the guidance doc).
 
@@ -84,10 +83,10 @@ probably **not clean orthologs** and the compartment call is suspect. The
 - **`<prefix>genetree_flagged.tsv`** — HOGs whose *own gene tree* conflicts with /
   can't confirm the grouping (`Conflict` / `Redundant` / private `REVIEW`).
 - **`<prefix>flagged_HOGs_annotated.tsv`** — the flagged HOGs joined to their
-  **Swiss-Prot function** (BLAST), so you can see *what family* is problematic. On
-  this dataset the reclassified set is heavily enriched for **Pentatricopeptide-repeat
-  (PPR) proteins** — a large, CNV-rich, hard-to-orthology-cluster family: exactly the
-  kind of gene family whose pangenome grouping deserves manual review. (This join
-  requires functional annotation from `--funano` / a Swiss-Prot BLAST DB.)
+  **Swiss-Prot function** (BLAST), so you can see *what family* is problematic.
+  Flagged / reclassified sets are often enriched for large, CNV-rich, hard-to-cluster
+  gene families (e.g. tandem-repeat, NBS-LRR, or pentatricopeptide-repeat families) —
+  exactly the kind of grouping that deserves manual review. (This join requires
+  functional annotation from `--funano` / a Swiss-Prot BLAST DB.)
 
 See also `docs/CLASSIFICATION_GUIDANCE.md` and `docs/HEATMAP_NORMALISATION.md`.
