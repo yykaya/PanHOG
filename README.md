@@ -1,5 +1,15 @@
 # PanHOG
 
+[![install with conda](https://img.shields.io/badge/install%20with-conda-44A833.svg?logo=anaconda&logoColor=white)](#installation)
+[![bioconda-ready](https://img.shields.io/badge/bioconda-ready-3EB049.svg?logo=anaconda&logoColor=white)](https://bioconda.github.io/)
+[![Python](https://img.shields.io/badge/python-%E2%89%A53.8-3776AB.svg?logo=python&logoColor=white)](#installation)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+<!-- After uploading, swap the badges above for the live channel version, e.g.:
+[![Anaconda](https://anaconda.org/yykaya/panhog/badges/version.svg)](https://anaconda.org/yykaya/panhog)
+or, once on bioconda:
+[![install with bioconda](https://img.shields.io/conda/vn/bioconda/panhog.svg)](https://anaconda.org/bioconda/panhog) -->
+
 <table>
 <tr>
 <td width="400">
