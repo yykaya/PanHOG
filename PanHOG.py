@@ -1426,6 +1426,10 @@ def main():
                         help="Run overall (global) pangenome classification (default if --clade not provided).")
     parser.add_argument("--clade", type=str, default=None,
                         help="Comma-separated list of species for clade-specific analysis.")
+    parser.add_argument("--outgroup", type=str, default=None,
+                        help="Comma-separated accessions to EXCLUDE from all analyses and "
+                             "plots (e.g. a distant outgroup that deflates 'core'). Applied "
+                             "on top of --clade if both are given.")
     parser.add_argument("--proteome", type=str, nargs='?', const='ALL', default=None,
                         help="Build a pan-proteome of specified species (comma-separated). If omitted, includes all final species.")
     parser.add_argument("--genevar", type=str, nargs='?', const='ALL', default=None,
@@ -1586,6 +1590,13 @@ def main():
     clade_filter = None
     if args.clade:
         clade_filter = set(x.strip() for x in args.clade.split(","))
+    if args.outgroup:
+        outgroup = set(x.strip() for x in args.outgroup.split(",") if x.strip())
+        with open(args.hog) as _fh:
+            all_species = set(next(csv.reader(_fh, delimiter="\t"))[3:])
+        clade_filter = (clade_filter or all_species) - outgroup
+        print(f"[INFO] --outgroup: excluding {', '.join(sorted(outgroup))} "
+              f"({len(clade_filter)} accessions kept for analysis and plots).")
 
     hogsfile = args.hog
     fasta_dir = args.fasta
