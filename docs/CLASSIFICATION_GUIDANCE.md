@@ -80,3 +80,26 @@ of per-pair ratios.
 - Single-copy **private** genes have no pair, so their dN/dS is undefined; multi-copy
   private gives **paralog** dN/dS (a younger comparison than ortholog dN/dS) — do not
   pool it naively with core/shell ortholog dN/dS.
+
+## Two data artefacts that distort the compartments (and the occupancy histogram)
+The occupancy histogram (`occupancy_histogram.png`) can look "wrong" for reasons that
+are in the **input**, not the plot:
+
+1. **A distant outgroup deflates the core.** "core = present in ALL accessions" forces
+   a gene to also exist in the outgroup. On the 12-accession test set, including
+   *A. lyrata* (an outgroup present in only 4,186/11,031 HOGs) shrank core to **30 %**;
+   restricting to the 11 *A. thaliana* accessions (`--clade a1,a2,…`) raised it to
+   **50 %** and lifted frequency↔PD agreement from 73 % → 88 %. **Exclude outgroups
+   from the pangenome with `--clade`** (or interpret "core" as "conserved to the
+   outgroup").
+2. **Annotation twins inflate a mid-occupancy bar and suppress private.** If two
+   accessions were annotated by lift-over from the same reference they share gene
+   models. Col-0 and Tanz-1 (both TAIR `AT#G` IDs) are identical in 91 % of HOGs, so
+   **80 % of the "present-in-exactly-2" families are just {Col-0, Tanz-1}** — a spike
+   at occupancy 2 that is annotation method, not biology, and it also steals genes
+   that would otherwise be private. PanHOG prints a `[WARNING]` when one accession's
+   mean copy number ≫ the others (see `docs/HEATMAP_NORMALISATION.md`). Fix upstream
+   with consistent annotation, or treat such twins as one accession.
+
+The plotting itself is faithful: it simply counts, for each occupancy level, how many
+gene families sit there, coloured by compartment.
