@@ -7,7 +7,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="panhog",
-    version="0.3.0",
+    version="0.4.0",
     description="Phylogeny-Aware Pangenome Classification Toolkit",
     long_description=long_description,
     long_description_content_type='text/markdown',
