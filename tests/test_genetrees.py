@@ -69,10 +69,9 @@ def test_verdict_concordant_is_ok():
     assert gt.make_verdict(m, nrf=0.0) == "OK"
 
 
-# ---- tree metrics + concordance (need ete3) ----
+# ---- tree metrics + concordance (Bio.Phylo) ----
 
 def test_tree_metrics(tmp_path):
-    pytest.importorskip("ete3")
     tree = tmp_path / "t.nwk"
     tree.write_text("((A:0.1,B:0.1):0.1,(C:0.1,D:0.1):0.1);")
     m = gt.tree_metrics(str(tree))
@@ -82,7 +81,6 @@ def test_tree_metrics(tmp_path):
 
 
 def test_species_concordance_identical_and_conflicting(tmp_path):
-    pytest.importorskip("ete3")
     species = tmp_path / "sp.nwk"
     species.write_text("((A:1,B:1):1,(C:1,D:1):1);")
     concordant = tmp_path / "g1.nwk"

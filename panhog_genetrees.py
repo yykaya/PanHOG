@@ -39,8 +39,8 @@ Tip labels use the *accession* name (each accession's FASTA is read separately),
 so identical gene IDs shared across accessions never collide.
 
 External tools (optional; absence is reported, never faked): MAFFT, RAxML-NG,
-and (for private validation) BLAST+ (makeblastdb / blastp). Tree analysis uses
-ete3 when available.
+and (for private validation) BLAST+ (makeblastdb / blastp). Tree metrics and
+Robinson-Foulds distances are computed with Biopython (Bio.Phylo).
 """
 
 from __future__ import annotations
@@ -53,11 +53,7 @@ import statistics
 import subprocess
 from itertools import combinations
 
-try:
-    from ete3 import Tree as EteTree
-    HAS_ETE3 = True
-except Exception:  # pragma: no cover - ete3 optional
-    HAS_ETE3 = False
+from Bio import Phylo
 
 
 # ---------------------------------------------------------------------------
@@ -286,16 +282,27 @@ def build_tree_raxml(aln, prefix, raxml_path="raxml-ng", model="LG+G",
 # Tree QC metrics + concordance
 # ---------------------------------------------------------------------------
 
+def _read_tree(tree_path):
+    """Parse a Newick file; None if missing or unparseable."""
+    if not tree_path or not os.path.exists(tree_path):
+        return None
+    try:
+        return Phylo.read(tree_path, "newick")
+    except Exception:
+        return None
+
+
 def tree_metrics(tree_path):
     """n_tips, total tree length, mean pairwise patristic distance, mean support."""
-    if not HAS_ETE3 or not tree_path:
+    t = _read_tree(tree_path)
+    if t is None:
         return {}
-    t = EteTree(tree_path)
-    leaves = t.get_leaves()
-    total_len = sum(nd.dist for nd in t.traverse())
-    dists = [a.get_distance(b) for a, b in combinations(leaves, 2)]
-    sups = [nd.support for nd in t.traverse()
-            if not nd.is_leaf() and nd.support is not None]
+    leaves = t.get_terminals()
+    total_len = sum(c.branch_length or 0.0 for c in t.find_clades())
+    dists = [t.distance(a, b) for a, b in combinations(leaves, 2)]
+    # RAxML-NG writes bootstrap support as internal-node labels -> confidence
+    sups = [c.confidence for c in t.get_nonterminals()
+            if c.confidence is not None]
     return {
         "n_tips": len(leaves),
         "tree_len": round(total_len, 4),
@@ -304,31 +311,48 @@ def tree_metrics(tree_path):
     }
 
 
-def _nrf(tree_a_path, tree_b_path, fmt_b=0):
-    if not HAS_ETE3 or not tree_a_path or not tree_b_path:
+def _splits(tree, leaves):
+    """Non-trivial unrooted bipartitions of `tree`, restricted to `leaves`.
+
+    Projecting every edge onto the shared leaf set is equivalent to pruning the
+    tree to those leaves. Each split is stored as the side that excludes a fixed
+    reference leaf, so a bipartition and its complement compare equal.
+    """
+    ref = min(leaves)
+    out = set()
+    for clade in tree.find_clades():
+        if clade is tree.root:
+            continue
+        side = {c.name for c in clade.get_terminals()} & leaves
+        if ref in side:
+            side = leaves - side
+        if 1 < len(side) < len(leaves) - 1:
+            out.add(frozenset(side))
+    return out
+
+
+def _nrf(tree_a_path, tree_b_path):
+    """Unrooted Robinson-Foulds on the shared tips, normalised to 0-1."""
+    a, b = _read_tree(tree_a_path), _read_tree(tree_b_path)
+    if a is None or b is None:
         return None
-    a = EteTree(tree_a_path)
-    try:
-        b = EteTree(tree_b_path, format=fmt_b)
-    except Exception:
-        b = EteTree(tree_b_path)
-    common = set(a.get_leaf_names()) & set(b.get_leaf_names())
+    common = ({c.name for c in a.get_terminals()}
+              & {c.name for c in b.get_terminals()})
     if len(common) < 4:
         return None
-    a.prune(common, preserve_branch_length=True)
-    b.prune(common, preserve_branch_length=True)
-    rf = a.robinson_foulds(b, unrooted_trees=True)
-    return round(rf[0] / rf[1], 3) if rf[1] else 0.0
+    sa, sb = _splits(a, common), _splits(b, common)
+    denom = len(sa) + len(sb)
+    return round(len(sa ^ sb) / denom, 3) if denom else 0.0
 
 
 def species_concordance(gene_tree_path, species_tree_path):
     """Normalised Robinson-Foulds vs the species tree (0 = identical topology)."""
-    return _nrf(gene_tree_path, species_tree_path, fmt_b=1)
+    return _nrf(gene_tree_path, species_tree_path)
 
 
 def tree_agreement(tree_a_path, tree_b_path):
     """Normalised RF between two gene trees (e.g. protein vs codon)."""
-    return _nrf(tree_a_path, tree_b_path, fmt_b=0)
+    return _nrf(tree_a_path, tree_b_path)
 
 
 def make_verdict(metrics, nrf, min_divergence=0.005, max_nrf=0.5, min_support=70.0):

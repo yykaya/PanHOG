@@ -84,7 +84,7 @@ The status feeds compartment refinement:
 ## How to run
 
 ```bash
-conda activate panhog   # has mafft, raxml-ng, blast, ete3
+conda activate panhog   # has mafft, raxml-ng, blast
 panhog --hog N0.tsv --fasta peptide/ --cds cds/ --pan \
        --species-tree species_tree.nwk \
        --gene-trees --gene-trees-per-class 5      # or --gene-tree-hogs H1,H2,...

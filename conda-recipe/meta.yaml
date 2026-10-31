@@ -1,5 +1,5 @@
 {% set name = "panhog" %}
-{% set version = "0.4.0" %}
+{% set version = "0.4.1" %}
 
 package:
   name: {{ name }}
@@ -17,6 +17,8 @@ source:
 build:
   number: 0
   noarch: python
+  run_exports:
+    - {{ pin_subpackage(name, max_pin="x.x") }}
   script: {{ PYTHON }} -m pip install . --no-deps --no-build-isolation -vv
   entry_points:
     - panhog = PanHOG:main
@@ -43,8 +45,6 @@ requirements:
     - pal2nal          # codon back-translation (optional)
     - paml             # codeml engine for --kaks-method codeml
     - raxml-ng         # ML gene trees (--gene-trees)
-    - modeltest-ng     # optional gene-tree model selection
-    - ete3             # gene-tree analysis (Robinson-Foulds distances)
 
 test:
   imports:

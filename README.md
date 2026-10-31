@@ -1,14 +1,10 @@
 # PanHOG
 
-[![install with conda](https://img.shields.io/badge/install%20with-conda-44A833.svg?logo=anaconda&logoColor=white)](#installation)
-[![bioconda-ready](https://img.shields.io/badge/bioconda-ready-3EB049.svg?logo=anaconda&logoColor=white)](https://bioconda.github.io/)
+[![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?logo=anaconda&logoColor=white)](https://bioconda.github.io/recipes/panhog/README.html)
+[![Bioconda version](https://img.shields.io/conda/vn/bioconda/panhog.svg?label=bioconda)](https://anaconda.org/bioconda/panhog)
+[![Downloads](https://img.shields.io/conda/dn/bioconda/panhog.svg?label=downloads)](https://anaconda.org/bioconda/panhog)
 [![Python](https://img.shields.io/badge/python-%E2%89%A53.8-3776AB.svg?logo=python&logoColor=white)](#installation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
-<!-- After uploading, swap the badges above for the live channel version, e.g.:
-[![Anaconda](https://anaconda.org/yykaya/panhog/badges/version.svg)](https://anaconda.org/yykaya/panhog)
-or, once on bioconda:
-[![install with bioconda](https://img.shields.io/conda/vn/bioconda/panhog.svg)](https://anaconda.org/bioconda/panhog) -->
 
 <table>
 <tr>
@@ -24,6 +20,18 @@ A <b>phylogeny-aware</b> toolkit for classifying and annotating Hierarchical Ort
 ---
 
 ## Changelog
+
+### [v0.4.1] - 2026-10-31
+
+**PanHOG is now on Bioconda:** `conda install -c conda-forge -c bioconda panhog`.
+
+#### Fixes
+- **Gene-tree validation on Python ≥ 3.13** — `ete3` imports the `cgi` module that was removed in Python 3.13, so it failed to load and `--gene-trees` silently reported every HOG as "no tree" / "Low-signal" with empty support and nRF columns. Tree metrics and Robinson–Foulds distances are now computed with Biopython (`Bio.Phylo`); normalised RF values are identical to the previous implementation on 600 random and all real tree pairs.
+- **Mean bootstrap support** no longer counts the root's placeholder value, which under-estimated support by ~10% and made the `Confirmed` threshold (support ≥ 70) harder to reach.
+
+#### Packaging
+- Removed the `ete3` and (unused) `modeltest-ng` dependencies — PanHOG now installs natively on Apple Silicon (`osx-arm64`) with a lighter environment.
+- Conda recipe adds `run_exports` (Bioconda requirement); `panhog --help` / `pangenehog --help` and the module import are tested on Linux, macOS and ARM by Bioconda CI.
 
 ### [v0.4.0] - 2026-07-06
 
@@ -43,11 +51,14 @@ cross-checked against the species tree, the gene trees, selection, and homology.
 - **Per-species counts** in `--summary` and `--random-hog-matrix` — an off-by-index bug that read the last accessions as absent/0 is fixed.
 - **Copy-number annotation-bias `[WARNING]`** — `--genevar` warns when one accession's mean copy number ≫ the rest (usually reference lift-over vs de-novo annotation, not biology).
 
-### [v0.3.0] - 2026-07-01
+<details>
+<summary><b>[v0.3.0] - 2026-07-01</b></summary>
 
 - **Correct Ka/Ks (dN/dS)** — replaces the broken built-in Nei–Gojobori routine; delegated to validated engines via **`--kaks-method`**: `biopython` (`--kaks-model` NG86/LWL85/YN00/ML), **`codeml`** (PAML pairwise), or `kakscalculator`. Undefined values are reported as `NaN`; writes a per-HOG summary and a per-pair table.
 - **Phylogeny-aware analysis (`--species-tree`)** — deterministic internal-node naming + annotated Newick tree, species/tip validation, HOG→LCA mapping with a **Faith's PD fraction**, and **Dollo-parsimony gain/loss** per branch.
 - **Modern BioPython compatibility** (≥1.85) and **packaging** — ships all helper modules, `pyproject.toml`, a conda recipe, and a `pytest` suite.
+
+</details>
 
 <details>
 <summary><b>[v0.2.0] - 2026-02-27</b></summary>
@@ -105,16 +116,27 @@ cross-checked against the species tree, the gene trees, selection, and homology.
 
 ## Installation
 
-### Conda (recommended)
+### Bioconda (recommended)
 ```bash
-conda env create -f environment.yml     # numpy, pandas, biopython, scipy,
-conda activate panhog                    # mafft, muscle, pal2nal, paml, blast,
-pip install .                            # raxml-ng, modeltest-ng, ete3 + PanHOG
+conda create -n panhog -c conda-forge -c bioconda panhog
+conda activate panhog
+panhog --help
+```
+This installs PanHOG together with every external tool it calls (mafft, muscle, pal2nal, paml, blast, raxml-ng). The package page is [bioconda.github.io/recipes/panhog](https://bioconda.github.io/recipes/panhog/README.html).
+
+> **Apple Silicon:** from v0.4.1 all dependencies are available natively for `osx-arm64`. If the solver reports a missing dependency (older builds), install the Intel build under Rosetta instead:
+> `CONDA_SUBDIR=osx-64 conda create -n panhog -c conda-forge -c bioconda panhog`
+
+### Conda environment from source
+```bash
+git clone https://github.com/yykaya/PanHOG.git && cd PanHOG
+conda env create -f environment.yml     # dependencies + PanHOG from this checkout
+conda activate panhog
 ```
 
-### Pip
+### Pip (Python dependencies only)
 ```bash
-pip install panhog          # Python deps only; install mafft/raxml-ng/blast/paml separately
+pip install git+https://github.com/yykaya/PanHOG.git   # install mafft/raxml-ng/blast/paml separately
 ```
 
 ### From source (development)
@@ -126,7 +148,7 @@ pytest                       # run the test suite
 ```
 After install, the `panhog` and `pangenehog` commands are available.
 
-**External tools by feature:** `mafft`/`muscle` (Ka/Ks, gene trees, supermatrix), `raxml-ng` (`--gene-trees`), `paml` codeml (`--kaks-method codeml`), `blast` (`--funano`, private-gene validation), `ete3` (gene-tree RF distances), `pal2nal` (`--backtrans pal2nal`).
+**External tools by feature:** `mafft`/`muscle` (Ka/Ks, gene trees, supermatrix), `raxml-ng` (`--gene-trees`), `paml` codeml (`--kaks-method codeml`), `blast` (`--funano`, private-gene validation), `pal2nal` (`--backtrans pal2nal`).
 
 ---
 
