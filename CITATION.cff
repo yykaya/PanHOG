@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use PanHOG in your research, please cite it as below."
+title: "PanHOG: phylogeny-aware pangenome analysis of hierarchical orthogroups"
+type: software
+authors:
+  - family-names: Kaya
+    given-names: Yasin
+version: 0.4.1
+date-released: 2026-10-31
+license: MIT
+repository-code: "https://github.com/yykaya/PanHOG"
+url: "https://bioconda.github.io/recipes/panhog/README.html"
+keywords:
+  - pangenome
+  - orthology
+  - hierarchical orthogroups
+  - phylogenetics
+  - bioinformatics
