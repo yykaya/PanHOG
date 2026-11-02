@@ -112,6 +112,12 @@ cross-checked against the species tree, the gene trees, selection, and homology.
 | Supermatrix | `--supermatrix` | Concatenated single-copy orthologs for phylogenomics |
 | Config file | `--config` | YAML-based configuration |
 
+### Upcoming
+
+| Feature | Status | Description |
+|---|---|---|
+| FastOMA HOG input | 🚧 under construction ([#2](https://github.com/yykaya/PanHOG/issues/2)) | Run the full PanHOG workflow on HOGs inferred by FastOMA (OrthoXML) as an alternative to OrthoFinder `N0.tsv` |
+
 ---
 
 ## Installation
@@ -124,8 +130,7 @@ panhog --help
 ```
 This installs PanHOG together with every external tool it calls (mafft, muscle, pal2nal, paml, blast, raxml-ng). The package page is [bioconda.github.io/recipes/panhog](https://bioconda.github.io/recipes/panhog/README.html).
 
-> **Apple Silicon:** from v0.4.1 all dependencies are available natively for `osx-arm64`. If the solver reports a missing dependency (older builds), install the Intel build under Rosetta instead:
-> `CONDA_SUBDIR=osx-64 conda create -n panhog -c conda-forge -c bioconda panhog`
+> **Apple Silicon:** PanHOG ≥ 0.4.1 installs natively on `osx-arm64` with the command above.
 
 ### Conda environment from source
 ```bash
